@@ -15,7 +15,7 @@ async function walk(directory, prefix = '') {
 
 const assets = ['./', ...await walk(new URL('../dist', import.meta.url).pathname)];
 const version = createHash('sha256').update(assets.join('|')).digest('hex').slice(0, 10);
-const serviceWorker = `const CACHE_PREFIX = 'inne-pytanie-';
+const serviceWorker = `const CACHE_PREFIX = 'inne-pytanie-lux-';
 const CACHE = CACHE_PREFIX + '${version}';
 const CORE = ${JSON.stringify(assets)};
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)).then(() => self.skipWaiting())));

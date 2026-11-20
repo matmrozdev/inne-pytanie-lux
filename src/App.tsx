@@ -1,16 +1,325 @@
-import{useEffect,useMemo,useRef,useState}from'react';import QRCode from'qrcode';import jsQR from'jsqr';import{CATEGORIES,QUESTIONS,shuffle,type Category,type QuestionPair}from'./questions';import{HostNetwork,JoinNetwork,type WireMessage}from'./webrtc';import'./scanner.css';
-type Player={id:string;name:string;connected:boolean};type Answer={playerId:string;name:string;image:string};type Round={pair:QuestionPair;alternateId:string;answers:Record<string,Answer>;revealed:boolean;second:boolean};
-function Shell({children}:{children:React.ReactNode}){return <main><header><b>≠</b> Inne pytanie</header>{children}</main>}
-function QR({value}:{value:string}){const[src,setSrc]=useState('');useEffect(()=>{QRCode.toDataURL(value,{errorCorrectionLevel:'L',margin:1,width:280}).then(setSrc)},[value]);return src?<img className="qr" src={src}/>:null}
-function Scanner({onScan}:{onScan:(value:string)=>void}){const[open,setOpen]=useState(false);const[error,setError]=useState('');const video=useRef<HTMLVideoElement>(null);useEffect(()=>{if(!open)return;let stopped=false,stream:MediaStream|undefined,timer=0;const canvas=document.createElement('canvas'),context=canvas.getContext('2d',{willReadFrequently:true});if(!navigator.mediaDevices?.getUserMedia||!context){setError('Ta przeglądarka nie udostępnia aparatu — wklej kod ręcznie.');return}navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}}).then(async s=>{stream=s;if(!video.current)return;video.current.srcObject=s;await video.current.play();const scan=()=>{const source=video.current;if(stopped||!source)return;if(source.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){const scale=Math.min(1,960/source.videoWidth);canvas.width=Math.max(1,Math.round(source.videoWidth*scale));canvas.height=Math.max(1,Math.round(source.videoHeight*scale));context.drawImage(source,0,0,canvas.width,canvas.height);const frame=context.getImageData(0,0,canvas.width,canvas.height);const result=jsQR(frame.data,frame.width,frame.height,{inversionAttempts:'dontInvert'});if(result?.data){onScan(result.data);setOpen(false);return}}timer=requestAnimationFrame(scan)};scan()}).catch(()=>setError('Nie udało się uruchomić aparatu. Sprawdź jego uprawnienia lub wklej kod ręcznie.'));return()=>{stopped=true;cancelAnimationFrame(timer);stream?.getTracks().forEach(track=>track.stop())}},[open,onScan]);return <div className="scanner">{open?<><div className="camera"><video ref={video} playsInline muted autoPlay/><span>Umieść kod w ramce</span></div><button onClick={()=>setOpen(false)}>Anuluj skanowanie</button></>:<button onClick={()=>{setError('');setOpen(true)}}>Skanuj kod QR</button>}{error&&<small>{error}</small>}</div>}
-function CopyBox({value,label}:{value:string;label:string}){return <div className="code"><QR value={value}/><label>{label}</label><textarea readOnly value={value}/><button onClick={()=>navigator.clipboard.writeText(value)}>Kopiuj kod</button></div>}
-function Canvas({onChange,readonlyImage}:{onChange?:(image:string,hasDrawing:boolean)=>void;readonlyImage?:string}){const ref=useRef<HTMLCanvasElement>(null);const drawing=useRef(false);const history=useRef<string[]>([]);const point=(e:React.PointerEvent)=>{const c=ref.current!,r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height}};const save=()=>{const c=ref.current!;history.current.push(c.toDataURL());onChange?.(c.toDataURL(),true)};const restore=(url?:string)=>{const c=ref.current!,x=c.getContext('2d')!;x.clearRect(0,0,c.width,c.height);if(url){const i=new Image;i.onload=()=>x.drawImage(i,0,0);i.src=url}};useEffect(()=>{if(readonlyImage)restore(readonlyImage)},[readonlyImage]);return <div className="board"><canvas ref={ref} width="900" height="650" onPointerDown={e=>{if(!onChange)return;drawing.current=true;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);const p=point(e),x=ref.current!.getContext('2d')!;x.beginPath();x.moveTo(p.x,p.y)}} onPointerMove={e=>{if(!drawing.current)return;const p=point(e),x=ref.current!.getContext('2d')!;x.lineWidth=10;x.lineCap='round';x.strokeStyle='#17162d';x.lineTo(p.x,p.y);x.stroke()}} onPointerUp={()=>{if(drawing.current){drawing.current=false;save()}}}/>{onChange&&<div><button onClick={()=>{history.current.pop();restore(history.current.at(-1));onChange(history.current.at(-1)??'',history.current.length>0)}}>↶ Cofnij</button><button onClick={()=>{history.current=[];restore();onChange('',false)}}>Wyczyść</button></div>}</div>}
-function Results({round,isHost,onSecond,onNext}:{round:Round;isHost:boolean;onSecond:()=>void;onNext:()=>void}){return <Shell><section className="screen"><p className="tag">Pytanie większości</p><h1>{round.pair.questionA}</h1><div className="answers">{Object.values(round.answers).map(a=><article key={a.playerId}><h3>{a.name}</h3>{a.image?<Canvas readonlyImage={a.image}/>:<p>Brak odpowiedzi</p>}</article>)}</div>{round.second&&<div className="second"><b>Drugie pytanie</b><p>{round.pair.questionB}</p><strong>Dostał je: {round.answers[round.alternateId]?.name}</strong></div>}{isHost&&<div className="actions">{!round.second&&<button onClick={onSecond}>Pokaż drugie pytanie</button>}<button className="primary" onClick={onNext}>Kolejna runda</button></div>}</section></Shell>}
-function Host(){const hostId=useMemo(()=>crypto.randomUUID(),[]);const[hostName,setHostName]=useState('Host');const[players,setPlayers]=useState<Player[]>([{id:hostId,name:'Host',connected:true}]);const[categories,setCategories]=useState<Category[]>(['Losowe']);const[pairing,setPairing]=useState<{peerId:string;offer:string}|null>(null);const[answer,setAnswer]=useState('');const[round,setRound]=useState<Round|null>(null);const[deck,setDeck]=useState<number[]>([]);const net=useRef<HostNetwork|null>(null);
- const handle=(peerId:string,m:WireMessage)=>{if(m.type==='join')setPlayers(p=>p.some(x=>x.id===peerId)?p:p.concat({id:peerId,name:String(m.name||'Gracz'),connected:true}));if(m.type==='answer')setRound(r=>r?{...r,answers:{...r.answers,[peerId]:{...r.answers[peerId],playerId:peerId,image:String(m.image||'')}}}:r)};useEffect(()=>{net.current=new HostNetwork(handle,(id,c)=>setPlayers(p=>p.map(x=>x.id===id?{...x,connected:c}:x)));return()=>net.current?.close()},[]);
- const next=()=>{const pool=QUESTIONS.filter(q=>categories.includes(q.category));let ids=deck.length?deck:shuffle(pool.map(q=>q.id));const id=ids.shift()!,pair=QUESTIONS.find(q=>q.id===id)!;setDeck(ids);const alternateId=players[Math.floor(Math.random()*players.length)].id;const answers=Object.fromEntries(players.map(p=>[p.id,{playerId:p.id,name:p.id===hostId?hostName:p.name,image:''}]));const r={pair,alternateId,answers,revealed:false,second:false};setRound(r);for(const p of players)if(p.id!==hostId)net.current?.send(p.id,{type:'round',pairId:pair.id,question:p.id===alternateId?pair.questionB:pair.questionA})};
- const reveal=()=>{if(!round)return;const r={...round,revealed:true};setRound(r);net.current?.broadcast({type:'results',round:{...r,pair:{...r.pair,questionB:''},alternateId:''}})};const second=()=>{if(!round)return;const r={...round,second:true};setRound(r);net.current?.broadcast({type:'second',questionB:r.pair.questionB,alternateId:r.alternateId})};
- if(round?.revealed)return <Results round={round} isHost onSecond={second} onNext={next}/>;if(round)return <Shell><section className="screen"><p className="tag">Twoje pytanie</p><h1>{round.alternateId===hostId?round.pair.questionB:round.pair.questionA}</h1><Canvas onChange={(image)=>setRound(r=>r?{...r,answers:{...r.answers,[hostId]:{playerId:hostId,name:hostName,image}}}:r)}/><div className="ready-list">{players.map(p=><span key={p.id}>{round.answers[p.id]?.image?'✓':'○'} {p.id===hostId?hostName:p.name}</span>)}</div><button className="primary" onClick={reveal}>Pokaż odpowiedzi</button></section></Shell>;
- return <Shell><section className="screen"><h1>Pokój hosta</h1><label>Twoje imię<input value={hostName} onChange={e=>{setHostName(e.target.value);setPlayers(p=>p.map(x=>x.id===hostId?{...x,name:e.target.value}:x))}}/></label><h2>Kategorie</h2><div className="chips">{CATEGORIES.map(c=><button key={c} className={categories.includes(c)?'on':''} onClick={()=>setCategories(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c])}>{c}</button>)}</div><h2>Gracze ({players.length}/2+)</h2>{players.map(p=><p className="player" key={p.id}><i className={p.connected?'online':''}/>{p.name}</p>)}<button onClick={async()=>setPairing(await net.current!.createOffer())}>＋ Dodaj gracza</button>{pairing&&<div className="modal"><CopyBox value={pairing.offer} label="Kod zaproszenia"/><Scanner onScan={setAnswer}/><label>Wklej odpowiedź gracza<textarea value={answer} onChange={e=>setAnswer(e.target.value)}/></label><button disabled={!answer.trim()} onClick={async()=>{await net.current!.acceptAnswer(pairing.peerId,answer);setPairing(null);setAnswer('')}}>Połącz</button></div>}<button className="primary" disabled={players.length<2||!categories.length} onClick={next}>Rozpocznij grę</button></section></Shell>}
-function Join(){const[name,setName]=useState('Gracz');const[offer,setOffer]=useState('');const[answer,setAnswer]=useState('');const[connected,setConnected]=useState(false);const[question,setQuestion]=useState('');const[round,setRound]=useState<Round|null>(null);const net=useRef<JoinNetwork|null>(null);useEffect(()=>()=>net.current?.close(),[]);const message=(m:WireMessage)=>{if(m.type==='round'){setQuestion(String(m.question));setRound(null)}if(m.type==='results')setRound(m.round as unknown as Round);if(m.type==='second')setRound(r=>r?{...r,pair:{...r.pair,questionB:String(m.questionB)},alternateId:String(m.alternateId),second:true}:r)};if(round)return <Results round={round} isHost={false} onSecond={()=>{}} onNext={()=>{}}/>;if(connected&&question)return <Shell><section className="screen"><p className="tag">Twoje pytanie</p><h1>{question}</h1><Canvas onChange={(image,hasDrawing)=>net.current?.send({type:'answer',image,hasDrawing})}/><p>Czekaj, aż host pokaże odpowiedzi.</p></section></Shell>;if(answer)return <Shell><section className="screen"><h1>Pokaż ten kod hostowi</h1><CopyBox value={answer} label="Kod odpowiedzi"/><p>{connected?'✓ Połączono':'Oczekiwanie na hosta…'}</p></section></Shell>;return <Shell><section className="screen"><h1>Dołącz do gry</h1><label>Twoje imię<input value={name} onChange={e=>setName(e.target.value)}/></label><Scanner onScan={setOffer}/><label>Wklej kod zaproszenia<textarea value={offer} onChange={e=>setOffer(e.target.value)}/></label><button className="primary" disabled={!offer.trim()||!name.trim()} onClick={async()=>{const n=new JoinNetwork(message,c=>{setConnected(c);if(c)n.send({type:'join',name})});net.current=n;setAnswer(await n.createAnswer(offer))}}>Generuj odpowiedź</button></section></Shell>}
-export default function App(){const[mode,setMode]=useState<'home'|'host'|'join'>('home');if(mode==='host')return <Host/>;if(mode==='join')return <Join/>;return <Shell><section className="home"><div className="logo">≠</div><p className="tag">Każdy na swoim telefonie</p><h1>Kto dostał inne pytanie?</h1><p>Odpowiedz palcem, porównajcie odpowiedzi i znajdźcie osobę z innym pytaniem.</p><button className="primary" onClick={()=>setMode('host')}>Utwórz grę</button><button onClick={()=>setMode('join')}>Dołącz</button></section></Shell>}
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import QRCode from 'qrcode';
+import { DrawingCanvas } from './DrawingCanvas';
+import {
+  chooseAlternateUid,
+  chooseQuestion,
+  decodeDrawing,
+  encodeDrawing,
+  MIN_PLAYERS,
+  normalizeRoomCode,
+  type Assignment,
+  type Drawing,
+  type Player,
+  type PublicRound,
+  type StoredAnswer,
+} from './game';
+import {
+  closeRoom,
+  createRoom,
+  joinRoom,
+  listenAnswers,
+  listenAssignment,
+  listenHostPrivate,
+  listenMembers,
+  listenMeta,
+  listenPublicRound,
+  removePlayer,
+  revealAnswers,
+  revealSecondQuestion,
+  startRound,
+  submitAnswer,
+  updateCategories,
+  type HostPrivateState,
+  type RoomMeta,
+} from './game-store';
+import { CATEGORIES, QUESTIONS, type Category } from './questions';
+import { QrScanner } from './QrScanner';
+import './scanner.css';
+
+type Mode = 'home' | 'host' | 'join';
+
+function Shell({ children }: { children: ReactNode }) {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    addEventListener('online', update);
+    addEventListener('offline', update);
+    return () => {
+      removeEventListener('online', update);
+      removeEventListener('offline', update);
+    };
+  }, []);
+  return <main>
+    <header><b>≠</b> Inne pytanie <em className={online ? 'online-label' : 'offline-label'}>{online ? 'online' : 'offline'}</em></header>
+    {children}
+  </main>;
+}
+
+function ErrorMessage({ error }: { error: string }) {
+  return error ? <p className="error" role="alert">{error}</p> : null;
+}
+
+function RoomCode({ code }: { code: string }) {
+  const [qr, setQr] = useState('');
+  const joinUrl = useMemo(() => {
+    const url = new URL(location.href);
+    url.search = `?room=${code}`;
+    return url.toString();
+  }, [code]);
+  useEffect(() => {
+    QRCode.toDataURL(joinUrl, { errorCorrectionLevel: 'M', margin: 1, width: 280 }).then(setQr);
+  }, [joinUrl]);
+  return <div className="code room-code">
+    {qr && <img className="qr" src={qr} alt={`Kod QR pokoju ${code}`} />}
+    <span>Kod pokoju</span>
+    <strong>{code}</strong>
+    <button onClick={() => navigator.clipboard.writeText(joinUrl)}>Kopiuj link</button>
+    {'share' in navigator && <button onClick={() => navigator.share({ title: 'Inne pytanie', text: `Dołącz do pokoju ${code}`, url: joinUrl })}>Udostępnij</button>}
+  </div>;
+}
+
+function CategoryPicker({ selected, onChange, disabled = false }: {
+  selected: Category[];
+  onChange: (categories: Category[]) => void;
+  disabled?: boolean;
+}) {
+  return <div className="chips">
+    {CATEGORIES.map(category => <button
+      key={category}
+      disabled={disabled}
+      className={selected.includes(category) ? 'on' : ''}
+      onClick={() => onChange(selected.includes(category)
+        ? selected.filter(value => value !== category)
+        : [...selected, category])}
+    >{category}</button>)}
+  </div>;
+}
+
+function HostSetup({ onReady }: { onReady: (code: string, uid: string) => void }) {
+  const [name, setName] = useState(localStorage.getItem('lux-name') ?? 'Host');
+  const [categories, setCategories] = useState<Category[]>(['Losowe']);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  return <Shell><section className="screen">
+    <p className="tag">Nowa gra przez internet</p>
+    <h1>Utwórz pokój</h1>
+    <label>Twoje imię<input value={name} maxLength={30} onChange={event => setName(event.target.value)} /></label>
+    <h2>Kategorie</h2>
+    <CategoryPicker selected={categories} onChange={setCategories} />
+    <ErrorMessage error={error} />
+    <button className="primary" disabled={loading || !name.trim() || !categories.length} onClick={async () => {
+      setLoading(true);
+      setError('');
+      try {
+        localStorage.setItem('lux-name', name.trim());
+        const result = await createRoom(name, categories);
+        onReady(result.code, result.user.uid);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Nie udało się utworzyć pokoju.');
+      } finally {
+        setLoading(false);
+      }
+    }}>{loading ? 'Tworzenie…' : 'Utwórz pokój'}</button>
+  </section></Shell>;
+}
+
+function JoinSetup({ initialCode, onReady }: { initialCode: string; onReady: (code: string, uid: string) => void }) {
+  const [name, setName] = useState(localStorage.getItem('lux-name') ?? 'Gracz');
+  const [code, setCode] = useState(initialCode);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  return <Shell><section className="screen">
+    <p className="tag">Dołącz przez internet</p>
+    <h1>Dołącz do pokoju</h1>
+    <label>Twoje imię<input value={name} maxLength={30} onChange={event => setName(event.target.value)} /></label>
+    <QrScanner onScan={value => {
+      try {
+        setCode(normalizeRoomCode(new URL(value).searchParams.get('room') ?? value));
+      } catch {
+        setCode(normalizeRoomCode(value));
+      }
+    }} />
+    <label>Kod pokoju<input className="room-input" value={code} inputMode="text" autoCapitalize="characters" onChange={event => setCode(normalizeRoomCode(event.target.value))} /></label>
+    <ErrorMessage error={error} />
+    <button className="primary" disabled={loading || !name.trim() || code.length !== 8} onClick={async () => {
+      setLoading(true);
+      setError('');
+      try {
+        localStorage.setItem('lux-name', name.trim());
+        const normalizedCode = normalizeRoomCode(code);
+        const user = await joinRoom(normalizedCode, name);
+        history.replaceState({}, '', `${location.pathname}?room=${normalizedCode}`);
+        onReady(normalizedCode, user.uid);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Nie udało się dołączyć.');
+      } finally {
+        setLoading(false);
+      }
+    }}>{loading ? 'Łączenie…' : 'Dołącz'}</button>
+  </section></Shell>;
+}
+
+function PlayerList({ members, hostUid, currentUid, onRemove }: {
+  members: Record<string, Player>;
+  hostUid: string;
+  currentUid: string;
+  onRemove?: (uid: string) => void;
+}) {
+  return <div className="players">
+    {Object.values(members).sort((a, b) => a.joinedAt - b.joinedAt).map(player => <div className="player" key={player.uid}>
+      <span><i className={player.connected ? 'online' : ''} />{player.name}{player.uid === hostUid ? ' ★' : ''}</span>
+      {onRemove && player.uid !== currentUid && <button onClick={() => onRemove(player.uid)}>Usuń</button>}
+    </div>)}
+  </div>;
+}
+
+function Results({ round, members, answers, isHost, onSecond, onNext }: {
+  round: PublicRound;
+  members: Record<string, Player>;
+  answers: Record<string, StoredAnswer>;
+  isHost: boolean;
+  onSecond: () => void;
+  onNext: () => void;
+}) {
+  return <Shell><section className="screen">
+    <p className="tag">Pytanie większości</p>
+    <h1>{round.questionA}</h1>
+    <div className="answers">
+      {Object.values(members).map(player => <article key={player.uid}>
+        <h3>{player.name}</h3>
+        {answers[player.uid]?.drawing
+          ? <DrawingCanvas drawing={decodeDrawing(answers[player.uid].drawing)} />
+          : <p>Brak odpowiedzi</p>}
+      </article>)}
+    </div>
+    {round.phase === 'second' && <div className="second">
+      <b>Drugie pytanie</b>
+      <p>{round.questionB}</p>
+      <strong>Dostał je: {members[round.alternateUid ?? '']?.name ?? 'Nieznany gracz'}</strong>
+    </div>}
+    {isHost && <div className="actions">
+      {round.phase === 'revealed' && <button onClick={onSecond}>Pokaż drugie pytanie</button>}
+      <button className="primary" onClick={onNext}>Kolejna runda</button>
+    </div>}
+  </section></Shell>;
+}
+
+function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => void }) {
+  const [meta, setMeta] = useState<RoomMeta | null>(null);
+  const [members, setMembers] = useState<Record<string, Player>>({});
+  const [round, setRound] = useState<PublicRound>({ phase: 'lobby', roundId: 0 });
+  const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [answers, setAnswers] = useState<Record<string, StoredAnswer>>({});
+  const [hostPrivate, setHostPrivate] = useState<HostPrivateState | null>(null);
+  const [drawing, setDrawing] = useState<Drawing>({ strokes: [] });
+  const [error, setError] = useState('');
+  const isHost = meta?.hostUid === uid;
+  const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'second';
+
+  useEffect(() => listenMeta(code, setMeta), [code]);
+  useEffect(() => listenMembers(code, setMembers), [code]);
+  useEffect(() => listenPublicRound(code, setRound), [code]);
+  useEffect(() => listenAssignment(code, uid, setAssignment), [code, uid]);
+  useEffect(() => listenAnswers(code, uid, canSeeAllAnswers, setAnswers), [code, uid, canSeeAllAnswers]);
+  useEffect(() => isHost ? listenHostPrivate(code, setHostPrivate) : undefined, [code, isHost]);
+  useEffect(() => {
+    setDrawing(decodeDrawing(answers[uid]?.drawing));
+  }, [answers, uid, round.roundId]);
+
+  if (!meta) return <Shell><section className="screen"><h1>Łączenie z pokojem…</h1></section></Shell>;
+
+  const connectedPlayers = Object.values(members).filter(player => player.connected);
+  const currentPair = hostPrivate ? QUESTIONS.find(question => question.id === hostPrivate.pairId) : undefined;
+  const beginRound = async () => {
+    if (!isHost) return;
+    if (connectedPlayers.length < MIN_PLAYERS) {
+      setError(`Potrzeba minimum ${MIN_PLAYERS} graczy online.`);
+      return;
+    }
+    try {
+      setError('');
+      const selection = chooseQuestion(QUESTIONS, meta.categories, hostPrivate?.usedIds ?? []);
+      const alternateUid = chooseAlternateUid(connectedPlayers.map(player => player.uid), hostPrivate?.alternateUid);
+      await startRound(code, round.roundId + 1, selection.question, alternateUid, connectedPlayers.map(player => player.uid), selection.usedIds);
+      setDrawing({ strokes: [] });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Nie udało się rozpocząć rundy.');
+    }
+  };
+
+  if (round.phase === 'revealed' || round.phase === 'second') {
+    return <Results
+      round={round}
+      members={members}
+      answers={answers}
+      isHost={isHost}
+      onSecond={async () => {
+        if (currentPair && hostPrivate) await revealSecondQuestion(code, round.roundId, currentPair, hostPrivate.alternateUid);
+      }}
+      onNext={beginRound}
+    />;
+  }
+
+  if (round.phase === 'answering') {
+    return <Shell><section className="screen">
+      <p className="tag">Runda {round.roundId}</p>
+      <h1>{assignment?.question ?? 'Pobieranie pytania…'}</h1>
+      <DrawingCanvas drawing={drawing} onChange={nextDrawing => {
+        setDrawing(nextDrawing);
+        if (assignment) void submitAnswer(code, uid, {
+          roundId: assignment.roundId,
+          drawing: encodeDrawing(nextDrawing),
+          submittedAt: Date.now(),
+        }).catch(() => setError('Nie udało się zapisać odpowiedzi. Sprawdź internet.'));
+      }} />
+      <ErrorMessage error={error} />
+      {isHost
+        ? <><div className="ready-list">{Object.values(members).map(player => <span key={player.uid}>{answers[player.uid]?.roundId === round.roundId ? '✓' : '○'} {player.name}</span>)}</div>
+          <button className="primary" disabled={!currentPair} onClick={() => currentPair && revealAnswers(code, round.roundId, currentPair.questionA)}>Pokaż odpowiedzi</button></>
+        : <p>Odpowiedź zapisuje się automatycznie. Czekaj na hosta.</p>}
+    </section></Shell>;
+  }
+
+  return <Shell><section className="screen">
+    <p className="tag">Pokój online</p>
+    <h1>{isHost ? 'Pokój hosta' : 'Poczekalnia'}</h1>
+    <RoomCode code={code} />
+    {isHost && <><h2>Kategorie</h2><CategoryPicker selected={meta.categories} onChange={categories => {
+      if (!categories.length) return;
+      void updateCategories(code, categories);
+    }} /></>}
+    <h2>Gracze ({connectedPlayers.length}/{MIN_PLAYERS}+)</h2>
+    <PlayerList members={members} hostUid={meta.hostUid} currentUid={uid} onRemove={isHost ? playerUid => void removePlayer(code, playerUid) : undefined} />
+    <ErrorMessage error={error} />
+    {isHost
+      ? <><button className="primary" disabled={connectedPlayers.length < MIN_PLAYERS} onClick={beginRound}>Rozpocznij grę</button>
+        <button className="danger" onClick={async () => { await closeRoom(code); onExit(); }}>Zamknij pokój</button></>
+      : <p>Host rozpocznie grę, gdy wszyscy będą gotowi.</p>}
+  </section></Shell>;
+}
+
+export default function App() {
+  const roomFromUrl = normalizeRoomCode(new URLSearchParams(location.search).get('room') ?? '');
+  const [mode, setMode] = useState<Mode>(roomFromUrl ? 'join' : 'home');
+  const [session, setSession] = useState<{ code: string; uid: string } | null>(null);
+
+  if (session) return <Room code={session.code} uid={session.uid} onExit={() => {
+    history.replaceState({}, '', location.pathname);
+    setSession(null);
+    setMode('home');
+  }} />;
+  if (mode === 'host') return <HostSetup onReady={(code, uid) => {
+    history.replaceState({}, '', `${location.pathname}?room=${code}`);
+    setSession({ code, uid });
+  }} />;
+  if (mode === 'join') return <JoinSetup initialCode={roomFromUrl} onReady={(code, uid) => setSession({ code, uid })} />;
+  return <Shell><section className="home">
+    <div className="logo">≠</div>
+    <p className="tag">Każdy na swoim telefonie</p>
+    <h1>Kto dostał inne pytanie?</h1>
+    <p>Utwórz pokój online, zaproś znajomych krótkim kodem i grajcie z dowolnej sieci.</p>
+    <button className="primary" onClick={() => setMode('host')}>Utwórz grę</button>
+    <button onClick={() => setMode('join')}>Dołącz</button>
+  </section></Shell>;
+}

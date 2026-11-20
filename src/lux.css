@@ -1,0 +1,78 @@
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+header em {
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.online-label {
+  background: #34d39922;
+  color: #6ee7b7;
+}
+
+.offline-label {
+  background: #fb718522;
+  color: #fda4af;
+}
+
+.room-code strong {
+  display: block;
+  margin: 8px 0 12px;
+  color: white;
+  font-size: clamp(32px, 12vw, 52px);
+  letter-spacing: 0.12em;
+}
+
+.room-code button {
+  margin: 4px;
+}
+
+.room-input {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.players {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+}
+
+.player button {
+  width: auto;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.error {
+  padding: 10px 12px;
+  border: 1px solid #fb718566;
+  border-radius: 12px;
+  background: #fb71851a;
+  color: #fecdd3;
+}
+
+.danger {
+  border-color: #fb718555;
+  color: #fda4af;
+}
