@@ -57,6 +57,29 @@ test('members can read lobby data but outsiders cannot', async () => {
   await assertFails(get(ref(outsider, `rooms/${room}/members`)));
 });
 
+test('an authenticated host can create a room without reading it first', async () => {
+  const creatorUid = 'new-host';
+  const creator = environment.authenticatedContext(creatorUid).database();
+  const newRoom = 'JKMNPQRS';
+  await assertSucceeds(set(ref(creator, `rooms/${newRoom}/meta`), {
+    hostUid: creatorUid,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+    categories: ['Losowe'],
+  }));
+  await assertSucceeds(set(ref(creator, `rooms/${newRoom}/members/${creatorUid}`), {
+    uid: creatorUid,
+    name: 'Host',
+    connected: true,
+    joinedAt: Date.now(),
+    lastSeen: Date.now(),
+  }));
+  await assertSucceeds(set(ref(creator, `rooms/${newRoom}/public`), {
+    phase: 'lobby',
+    roundId: 0,
+  }));
+});
+
 test('a guest can only read their own assignment', async () => {
   const guest = environment.authenticatedContext(guestUid).database();
   await assertSucceeds(get(ref(guest, `rooms/${room}/assignments/${guestUid}`)));

@@ -4,7 +4,6 @@ import {
   onValue,
   ref,
   remove,
-  runTransaction,
   serverTimestamp,
   set,
   update,
@@ -53,23 +52,28 @@ export async function createRoom(hostName: string, categories: Category[]): Prom
       expiresAt: now + ROOM_TTL_MS,
       categories,
     };
-    const transaction = await runTransaction(
-      ref(database, roomPath(code, 'meta')),
-      current => current === null ? meta : undefined,
-      { applyLocally: false },
-    );
-    if (!transaction.committed) continue;
-
-    await update(ref(database, roomPath(code)), {
-      [`members/${user.uid}`]: {
-        uid: user.uid,
-        name,
-        connected: true,
-        joinedAt: serverTimestamp(),
-        lastSeen: serverTimestamp(),
-      },
-      public: { phase: 'lobby', roundId: 0 },
-    });
+    try {
+      // A transaction would need read access before this room exists. The
+      // creation-only rule rejects collisions without exposing unused codes.
+      await set(ref(database, roomPath(code, 'meta')), meta);
+    } catch {
+      continue;
+    }
+    try {
+      await update(ref(database, roomPath(code)), {
+        [`members/${user.uid}`]: {
+          uid: user.uid,
+          name,
+          connected: true,
+          joinedAt: serverTimestamp(),
+          lastSeen: serverTimestamp(),
+        },
+        public: { phase: 'lobby', roundId: 0 },
+      });
+    } catch {
+      await remove(ref(database, roomPath(code)));
+      throw new Error('Nie udało się przygotować pokoju. Spróbuj ponownie.');
+    }
     await registerPresence(code, user.uid);
     return { code, user };
   }
