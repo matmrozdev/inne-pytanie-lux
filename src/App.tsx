@@ -43,6 +43,8 @@ import {
   listenScores,
   listenVotes,
   removePlayer,
+  registerPresence,
+  resumeRoom,
   returnToLobby,
   revealAnswers,
   startRound,
@@ -317,7 +319,7 @@ function AnswerGallery({ members, answers }: {
   </div>;
 }
 
-function Results({ round, members, answers, votes, scores, isHost, progressLabel, nextLabel, onNext }: {
+function Results({ round, members, answers, votes, scores, isHost, progressLabel, nextLabel, pending, error, onNext }: {
   round: PublicRound;
   members: Record<string, Player>;
   answers: Record<string, StoredAnswer>;
@@ -326,7 +328,9 @@ function Results({ round, members, answers, votes, scores, isHost, progressLabel
   isHost: boolean;
   progressLabel: string;
   nextLabel: string;
-  onNext: () => void;
+  pending: boolean;
+  error: string;
+  onNext: () => Promise<void>;
 }) {
   const playerUids = Object.keys(members);
   const roundPoints = calculateRoundScores(votes, round.alternateUid ?? '', playerUids);
@@ -354,8 +358,9 @@ function Results({ round, members, answers, votes, scores, isHost, progressLabel
         <strong>{scores[player.uid] ?? 0} pkt</strong>
       </div>)}
     </div>
+    <ErrorMessage error={error} />
     {isHost && <div className="actions">
-      <button className="primary" onClick={onNext}>{nextLabel}</button>
+      <button className="primary" disabled={pending} onClick={() => void onNext()}>{pending ? 'Przechodzenie…' : nextLabel}</button>
     </div>}
     {!isHost && <p>Host przejdzie dalej.</p>}
   </section></Shell>;
@@ -373,6 +378,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const [hostPrivate, setHostPrivate] = useState<HostPrivateState | null>(null);
   const [drawing, setDrawing] = useState<Drawing>({ strokes: [] });
   const [error, setError] = useState('');
+  const [hostActionPending, setHostActionPending] = useState(false);
   const finalizingRound = useRef<number | null>(null);
   const isHost = meta?.hostUid === uid;
   const settings: GameSettings = {
@@ -388,6 +394,18 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const currentPair = hostPrivate ? QUESTIONS.find(question => question.id === hostPrivate.pairId) : undefined;
 
   useEffect(() => listenMeta(code, setMeta), [code]);
+  useEffect(() => {
+    let active = true;
+    let presenceUnsubscribe: (() => void) | undefined;
+    void registerPresence(code, uid).then(unsubscribe => {
+      if (active) presenceUnsubscribe = unsubscribe;
+      else unsubscribe();
+    });
+    return () => {
+      active = false;
+      presenceUnsubscribe?.();
+    };
+  }, [code, uid]);
   useEffect(() => listenMembers(code, setMembers), [code]);
   useEffect(() => listenPublicRound(code, setRound), [code]);
   useEffect(() => listenAssignment(code, uid, setAssignment), [code, uid]);
@@ -433,6 +451,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       return;
     }
     try {
+      setHostActionPending(true);
       setError('');
       const selection = chooseQuestion(QUESTIONS, meta.categories, hostPrivate?.usedIds ?? []);
       const playerUids = allPlayers.map(player => player.uid);
@@ -441,6 +460,32 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       setDrawing({ strokes: [] });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Nie udało się rozpocząć rundy.');
+    } finally {
+      setHostActionPending(false);
+    }
+  };
+
+  const beginVoting = async () => {
+    try {
+      setHostActionPending(true);
+      setError('');
+      await startVoting(code, round.roundId, round.questionA ?? '');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Nie udało się rozpocząć głosowania.');
+    } finally {
+      setHostActionPending(false);
+    }
+  };
+
+  const completeGame = async () => {
+    try {
+      setHostActionPending(true);
+      setError('');
+      await finishGame(code, round.roundId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Nie udało się zakończyć gry.');
+    } finally {
+      setHostActionPending(false);
     }
   };
 
@@ -471,13 +516,13 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       votes={votes}
       scores={scores}
       isHost={isHost}
+      pending={hostActionPending}
+      error={error}
       progressLabel={`Runda ${progress.roundNumber}/${settings.rounds} · Pytanie ${progress.questionNumber}/${settings.questionsPerRound}`}
       nextLabel={isGameComplete(round.roundId, settings)
         ? 'Zakończ grę'
         : progress.questionNumber === settings.questionsPerRound ? 'Następna runda' : 'Następne pytanie'}
-      onNext={() => isGameComplete(round.roundId, settings)
-        ? void finishGame(code, round.roundId)
-        : void beginRound()}
+      onNext={() => isGameComplete(round.roundId, settings) ? completeGame() : beginRound()}
     />;
   }
 
@@ -486,8 +531,9 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       <p className="tag">Runda {progress.roundNumber}/{settings.rounds} · odpowiedzi</p>
       <h1>{round.questionA}</h1>
       <AnswerGallery members={members} answers={answers} />
+      <ErrorMessage error={error} />
       {isHost
-        ? <button className="primary" onClick={() => void startVoting(code, round.roundId, round.questionA ?? '')}>Rozpocznij głosowanie</button>
+        ? <button className="primary" disabled={hostActionPending} onClick={() => void beginVoting()}>{hostActionPending ? 'Uruchamianie…' : 'Rozpocznij głosowanie'}</button>
         : <p>Obejrzyj odpowiedzi. Host za chwilę rozpocznie głosowanie.</p>}
     </section></Shell>;
   }
@@ -567,9 +613,24 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
 }
 
 export default function App() {
-  const roomFromUrl = normalizeRoomCode(new URLSearchParams(location.search).get('room') ?? '');
+  const roomFromUrl = useRef(normalizeRoomCode(new URLSearchParams(location.search).get('room') ?? '')).current;
   const [mode, setMode] = useState<Mode>(roomFromUrl ? 'join' : 'home');
   const [session, setSession] = useState<{ code: string; uid: string } | null>(null);
+  const [restoringSession, setRestoringSession] = useState(Boolean(roomFromUrl));
+
+  useEffect(() => {
+    if (!roomFromUrl) return;
+    let active = true;
+    void resumeRoom(roomFromUrl).then(user => {
+      if (!active) return;
+      if (user) setSession({ code: roomFromUrl, uid: user.uid });
+      else setMode('join');
+      setRestoringSession(false);
+    });
+    return () => { active = false; };
+  }, [roomFromUrl]);
+
+  if (restoringSession) return <Shell><section className="screen"><h1>Wracamy do pokoju…</h1><p>Odtwarzanie Twojej sesji.</p></section></Shell>;
 
   if (session) return <Room code={session.code} uid={session.uid} onExit={() => {
     history.replaceState({}, '', location.pathname);

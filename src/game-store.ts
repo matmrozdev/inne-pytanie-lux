@@ -87,7 +87,6 @@ export async function createRoom(
       await remove(ref(database, roomPath(code)));
       throw new Error('Nie udało się przygotować pokoju. Spróbuj ponownie.');
     }
-    await registerPresence(code, user.uid);
     return { code, user };
   }
   throw new Error('Nie udało się utworzyć unikalnego pokoju. Spróbuj ponownie.');
@@ -114,8 +113,23 @@ export async function joinRoom(code: string, playerName: string): Promise<User> 
     await remove(ref(database, roomPath(code, `members/${user.uid}`)));
     throw new Error(`Pokój jest pełny — maksymalnie ${MAX_PLAYERS} graczy.`);
   }
-  await registerPresence(code, user.uid);
   return user;
+}
+
+export async function resumeRoom(code: string): Promise<User | null> {
+  const user = await ensureAnonymousUser();
+  try {
+    const [metaSnapshot, membersSnapshot] = await Promise.all([
+      get(ref(database, roomPath(code, 'meta'))),
+      get(ref(database, roomPath(code, 'members'))),
+    ]);
+    const meta = metaSnapshot.val() as RoomMeta | null;
+    const members = membersSnapshot.val() as Record<string, Player> | null;
+    if (!meta || meta.expiresAt <= Date.now() || !members?.[user.uid]) return null;
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 export async function registerPresence(code: string, uid: string): Promise<Unsubscribe> {

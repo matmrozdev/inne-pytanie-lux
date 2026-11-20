@@ -14,6 +14,7 @@ export const auth = getAuth(firebaseApp);
 export const database = getDatabase(firebaseApp);
 
 export async function ensureAnonymousUser(): Promise<User> {
+  await auth.authStateReady();
   await setPersistence(auth, browserLocalPersistence);
   if (auth.currentUser) return auth.currentUser;
   return (await signInAnonymously(auth)).user;
