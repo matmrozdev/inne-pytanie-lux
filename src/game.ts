@@ -10,12 +10,15 @@ export const DEFAULT_ROUNDS = 3;
 export const DEFAULT_QUESTIONS_PER_ROUND = 3;
 export const MAX_ROUNDS = 20;
 export const MAX_QUESTIONS_PER_ROUND = 10;
+export const TURN_SECONDS_OPTIONS = [30, 60, 120, 160] as const;
+export const DEFAULT_TURN_SECONDS = 60;
 
 export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'second' | 'finished';
 
 export interface GameSettings {
   rounds: number;
   questionsPerRound: number;
+  turnSeconds: number;
 }
 
 export interface Player {
@@ -33,6 +36,8 @@ export interface Point {
 
 export interface Stroke {
   points: Point[];
+  color?: string;
+  width?: number;
 }
 
 export interface Drawing {
@@ -45,6 +50,7 @@ export interface PublicRound {
   questionA?: string;
   questionB?: string;
   alternateUid?: string;
+  deadlineAt?: number;
 }
 
 export interface Assignment {

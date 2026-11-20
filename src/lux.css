@@ -4,6 +4,11 @@ header {
   gap: 8px;
 }
 
+.board canvas {
+  background: #ffffff !important;
+  color-scheme: light;
+}
+
 header em {
   margin-left: auto;
   padding: 4px 8px;
@@ -90,6 +95,37 @@ header em {
   text-align: center;
 }
 
+.time-setting {
+  grid-column: 1 / -1;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.time-setting > span {
+  display: block;
+  margin-bottom: 9px;
+  color: #d8d4ed;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.time-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.time-options button {
+  padding: 9px 4px;
+}
+
+.time-options button.on {
+  background: #f472b62c;
+  outline: 1px solid var(--pink);
+}
+
 .number-setting {
   margin: 0;
   padding: 12px;
@@ -132,6 +168,68 @@ header em {
   background: #34d399;
 }
 
+.board > .drawing-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.color-palette {
+  display: flex;
+  flex: 1;
+  gap: 7px;
+}
+
+.color-palette button {
+  width: 33px;
+  height: 33px;
+  padding: 0;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px transparent;
+}
+
+.color-palette button.active {
+  box-shadow: 0 0 0 2px var(--pink);
+}
+
+.drawing-tools .eraser {
+  width: auto;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.drawing-tools .eraser.active {
+  background: #f472b62c;
+  outline: 1px solid var(--pink);
+}
+
+.board > .drawing-actions {
+  display: grid;
+}
+
+.question-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  color: #d8d4ed;
+}
+
+.question-timer strong {
+  color: #6ee7b7;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.question-timer.urgent strong {
+  color: #fda4af;
+}
+
 @media (max-width: 380px) {
   .settings-grid {
     grid-template-columns: 1fr;
@@ -139,5 +237,13 @@ header em {
 
   .settings-grid > p {
     grid-column: 1;
+  }
+
+  .time-setting {
+    grid-column: 1;
+  }
+
+  .time-options {
+    grid-template-columns: 1fr 1fr;
   }
 }

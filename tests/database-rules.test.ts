@@ -32,12 +32,13 @@ before(async () => {
         categories: ['Losowe'],
         rounds: 3,
         questionsPerRound: 3,
+        turnSeconds: 60,
       },
       members: {
         [hostUid]: { uid: hostUid, name: 'Host', connected: true, joinedAt: 1, lastSeen: 1 },
         [guestUid]: { uid: guestUid, name: 'Guest', connected: true, joinedAt: 2, lastSeen: 2 },
       },
-      public: { phase: 'answering', roundId: 1 },
+      public: { phase: 'answering', roundId: 1, deadlineAt: Date.now() + 60_000 },
       assignments: {
         [hostUid]: { roundId: 1, question: 'Host question' },
         [guestUid]: { roundId: 1, question: 'Guest question' },
@@ -70,6 +71,7 @@ test('an authenticated host can create a room without reading it first', async (
     categories: ['Losowe'],
     rounds: 3,
     questionsPerRound: 3,
+    turnSeconds: 60,
   }));
   await assertSucceeds(set(ref(creator, `rooms/${newRoom}/members/${creatorUid}`), {
     uid: creatorUid,
@@ -104,7 +106,7 @@ test('the host can atomically start a round while a guest cannot', async () => {
       [guestUid]: { roundId: 2, question: 'Alternate question' },
     },
     answers: null,
-    public: { phase: 'answering', roundId: 2 },
+    public: { phase: 'answering', roundId: 2, deadlineAt: Date.now() + 60_000 },
     hostPrivate: { pairId: 2, alternateUid: guestUid, usedIds: [1, 2] },
   };
   const host = environment.authenticatedContext(hostUid).database();
@@ -116,9 +118,10 @@ test('the host can atomically start a round while a guest cannot', async () => {
 test('only the host can change valid game settings', async () => {
   const host = environment.authenticatedContext(hostUid).database();
   const guest = environment.authenticatedContext(guestUid).database();
-  await assertFails(update(ref(guest, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2 }));
-  await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 0, questionsPerRound: 2 }));
-  await assertSucceeds(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2 }));
+  await assertFails(update(ref(guest, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 120 }));
+  await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 0, questionsPerRound: 2, turnSeconds: 120 }));
+  await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 45 }));
+  await assertSucceeds(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 120 }));
 });
 
 test('the host can finish a game and return everyone to the lobby', async () => {
@@ -136,7 +139,7 @@ test('the host can finish a game and return everyone to the lobby', async () => 
 
 test('answers are private until the host reveals them', async () => {
   await environment.withSecurityRulesDisabled(async context => {
-    await set(ref(context.database(), `rooms/${room}/public`), { phase: 'answering', roundId: 1 });
+    await set(ref(context.database(), `rooms/${room}/public`), { phase: 'answering', roundId: 1, deadlineAt: Date.now() + 60_000 });
   });
   const guest = environment.authenticatedContext(guestUid).database();
   const host = environment.authenticatedContext(hostUid).database();

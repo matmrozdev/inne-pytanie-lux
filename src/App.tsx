@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { DrawingCanvas } from './DrawingCanvas';
 import {
@@ -8,11 +8,13 @@ import {
   decodeDrawing,
   DEFAULT_QUESTIONS_PER_ROUND,
   DEFAULT_ROUNDS,
+  DEFAULT_TURN_SECONDS,
   encodeDrawing,
   getQuestionProgress,
   isGameComplete,
   MAX_QUESTIONS_PER_ROUND,
   MAX_ROUNDS,
+  TURN_SECONDS_OPTIONS,
   MIN_PLAYERS,
   normalizeRoomCode,
   type Assignment,
@@ -161,7 +163,45 @@ function GameSettingsPicker({ settings, onChange, disabled = false }: {
       disabled={disabled}
       onChange={questionsPerRound => onChange({ ...settings, questionsPerRound })}
     />
+    <div className="time-setting">
+      <span>Czas na pytanie</span>
+      <div className="time-options">
+        {TURN_SECONDS_OPTIONS.map(seconds => <button
+          key={seconds}
+          disabled={disabled}
+          className={settings.turnSeconds === seconds ? 'on' : ''}
+          onClick={() => onChange({ ...settings, turnSeconds: seconds })}
+        >{seconds} s</button>)}
+      </div>
+    </div>
     <p>Łącznie: <strong>{settings.rounds * settings.questionsPerRound}</strong> pytań</p>
+  </div>;
+}
+
+function QuestionTimer({ deadlineAt, onExpire }: { deadlineAt?: number; onExpire?: () => void }) {
+  const [remaining, setRemaining] = useState(() => Math.max(0, Math.ceil(((deadlineAt ?? Date.now()) - Date.now()) / 1000)));
+  const expired = useRef(false);
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => { onExpireRef.current = onExpire; }, [onExpire]);
+  useEffect(() => {
+    expired.current = false;
+    const update = () => {
+      const next = Math.max(0, Math.ceil(((deadlineAt ?? Date.now()) - Date.now()) / 1000));
+      setRemaining(next);
+      if (next === 0 && !expired.current) {
+        expired.current = true;
+        onExpireRef.current?.();
+      }
+    };
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [deadlineAt]);
+  const minutes = Math.floor(remaining / 60);
+  const seconds = String(remaining % 60).padStart(2, '0');
+  return <div className={remaining <= 10 ? 'question-timer urgent' : 'question-timer'}>
+    <span>{remaining ? 'Pozostały czas' : 'Czas minął'}</span>
+    <strong>{minutes}:{seconds}</strong>
   </div>;
 }
 
@@ -171,6 +211,9 @@ function HostSetup({ onReady }: { onReady: (code: string, uid: string) => void }
   const [settings, setSettings] = useState<GameSettings>({
     rounds: clampInteger(Number(localStorage.getItem('lux-rounds') ?? DEFAULT_ROUNDS), 1, MAX_ROUNDS),
     questionsPerRound: clampInteger(Number(localStorage.getItem('lux-questions-per-round') ?? DEFAULT_QUESTIONS_PER_ROUND), 1, MAX_QUESTIONS_PER_ROUND),
+    turnSeconds: TURN_SECONDS_OPTIONS.includes(Number(localStorage.getItem('lux-turn-seconds')) as typeof TURN_SECONDS_OPTIONS[number])
+      ? Number(localStorage.getItem('lux-turn-seconds'))
+      : DEFAULT_TURN_SECONDS,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -190,6 +233,7 @@ function HostSetup({ onReady }: { onReady: (code: string, uid: string) => void }
         localStorage.setItem('lux-name', name.trim());
         localStorage.setItem('lux-rounds', String(settings.rounds));
         localStorage.setItem('lux-questions-per-round', String(settings.questionsPerRound));
+        localStorage.setItem('lux-turn-seconds', String(settings.turnSeconds));
         const result = await createRoom(name, categories, settings);
         onReady(result.code, result.user.uid);
       } catch (caught) {
@@ -297,6 +341,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const settings: GameSettings = {
     rounds: meta?.rounds ?? DEFAULT_ROUNDS,
     questionsPerRound: meta?.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND,
+    turnSeconds: meta?.turnSeconds ?? DEFAULT_TURN_SECONDS,
   };
   const progress = getQuestionProgress(round.roundId, settings.questionsPerRound);
   const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'second';
@@ -308,24 +353,31 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   useEffect(() => listenAnswers(code, uid, canSeeAllAnswers, setAnswers), [code, uid, canSeeAllAnswers]);
   useEffect(() => isHost ? listenHostPrivate(code, setHostPrivate) : undefined, [code, isHost]);
   useEffect(() => {
+    if (!meta || !isHost) return;
+    if (meta.rounds && meta.questionsPerRound && meta.turnSeconds) return;
+    void updateGameSettings(code, settings).catch(() => setError('Nie udało się uzupełnić ustawień pokoju.'));
+  }, [code, isHost, meta, settings.questionsPerRound, settings.rounds, settings.turnSeconds]);
+  useEffect(() => {
     setDrawing(decodeDrawing(answers[uid]?.drawing));
   }, [answers, uid, round.roundId]);
 
   if (!meta) return <Shell><section className="screen"><h1>Łączenie z pokojem…</h1></section></Shell>;
 
-  const connectedPlayers = Object.values(members).filter(player => player.connected);
+  const allPlayers = Object.values(members);
+  const connectedPlayers = allPlayers.filter(player => player.connected);
   const currentPair = hostPrivate ? QUESTIONS.find(question => question.id === hostPrivate.pairId) : undefined;
   const beginRound = async () => {
     if (!isHost) return;
-    if (connectedPlayers.length < MIN_PLAYERS) {
-      setError(`Potrzeba minimum ${MIN_PLAYERS} graczy online.`);
+    if (allPlayers.length < MIN_PLAYERS) {
+      setError(`Potrzeba minimum ${MIN_PLAYERS} graczy.`);
       return;
     }
     try {
       setError('');
       const selection = chooseQuestion(QUESTIONS, meta.categories, hostPrivate?.usedIds ?? []);
-      const alternateUid = chooseAlternateUid(connectedPlayers.map(player => player.uid), hostPrivate?.alternateUid);
-      await startRound(code, round.roundId + 1, selection.question, alternateUid, connectedPlayers.map(player => player.uid), selection.usedIds);
+      const playerUids = allPlayers.map(player => player.uid);
+      const alternateUid = chooseAlternateUid(playerUids, hostPrivate?.alternateUid);
+      await startRound(code, round.roundId + 1, selection.question, alternateUid, playerUids, selection.usedIds, settings.turnSeconds);
       setDrawing({ strokes: [] });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Nie udało się rozpocząć rundy.');
@@ -366,6 +418,10 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   if (round.phase === 'answering') {
     return <Shell><section className="screen">
       <p className="tag">Runda {progress.roundNumber}/{settings.rounds} · Pytanie {progress.questionNumber}/{settings.questionsPerRound}</p>
+      <QuestionTimer
+        deadlineAt={round.deadlineAt}
+        onExpire={isHost && currentPair ? () => void revealAnswers(code, round.roundId, currentPair.questionA) : undefined}
+      />
       <h1>{assignment?.question ?? 'Pobieranie pytania…'}</h1>
       <DrawingCanvas drawing={drawing} onChange={nextDrawing => {
         setDrawing(nextDrawing);
@@ -394,11 +450,11 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       <h2>Ustawienia gry</h2>
       <GameSettingsPicker settings={settings} onChange={nextSettings => void updateGameSettings(code, nextSettings)} />
     </>}
-    <h2>Gracze ({connectedPlayers.length}/{MIN_PLAYERS}+)</h2>
+    <h2>Gracze ({allPlayers.length}/{MIN_PLAYERS}+)</h2>
     <PlayerList members={members} hostUid={meta.hostUid} currentUid={uid} onRemove={isHost ? playerUid => void removePlayer(code, playerUid) : undefined} />
     <ErrorMessage error={error} />
     {isHost
-      ? <><button className="primary" disabled={connectedPlayers.length < MIN_PLAYERS} onClick={beginRound}>Rozpocznij grę</button>
+      ? <><button className="primary" disabled={allPlayers.length < MIN_PLAYERS} onClick={beginRound}>Rozpocznij grę</button>
         <button className="danger" onClick={async () => { await closeRoom(code); onExit(); }}>Zamknij pokój</button></>
       : <p>Host rozpocznie grę, gdy wszyscy będą gotowi.</p>}
   </section></Shell>;

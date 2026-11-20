@@ -8,17 +8,28 @@ interface DrawingCanvasProps {
 
 const WIDTH = 900;
 const HEIGHT = 650;
+const PEN_WIDTH = 10;
+const ERASER_WIDTH = 38;
+const ERASER_COLOR = '#ffffff';
+const COLORS = [
+  { value: '#17162d', label: 'Czarny' },
+  { value: '#e11d48', label: 'Czerwony' },
+  { value: '#2563eb', label: 'Niebieski' },
+  { value: '#16a34a', label: 'Zielony' },
+  { value: '#9333ea', label: 'Fioletowy' },
+  { value: '#ea580c', label: 'Pomarańczowy' },
+] as const;
 
 function renderDrawing(canvas: HTMLCanvasElement, drawing: Drawing): void {
   const context = canvas.getContext('2d');
   if (!context) return;
   context.clearRect(0, 0, WIDTH, HEIGHT);
-  context.strokeStyle = '#17162d';
-  context.lineWidth = 10;
   context.lineCap = 'round';
   context.lineJoin = 'round';
   for (const stroke of drawing.strokes) {
     if (!stroke.points.length) continue;
+    context.strokeStyle = stroke.color ?? '#17162d';
+    context.lineWidth = stroke.width ?? PEN_WIDTH;
     context.beginPath();
     context.moveTo(stroke.points[0].x * WIDTH, stroke.points[0].y * HEIGHT);
     for (const point of stroke.points.slice(1)) {
@@ -32,6 +43,8 @@ export function DrawingCanvas({ drawing, onChange }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeStroke = useRef<Stroke | null>(null);
   const [history, setHistory] = useState<Drawing[]>([]);
+  const [color, setColor] = useState<string>(COLORS[0].value);
+  const [eraser, setEraser] = useState(false);
 
   useEffect(() => {
     if (canvasRef.current) renderDrawing(canvasRef.current, drawing);
@@ -57,7 +70,11 @@ export function DrawingCanvas({ drawing, onChange }: DrawingCanvasProps) {
       onPointerDown={event => {
         if (!onChange) return;
         event.currentTarget.setPointerCapture(event.pointerId);
-        activeStroke.current = { points: [pointFromEvent(event)] };
+        activeStroke.current = {
+          points: [pointFromEvent(event)],
+          color: eraser ? ERASER_COLOR : color,
+          width: eraser ? ERASER_WIDTH : PEN_WIDTH,
+        };
       }}
       onPointerMove={event => {
         if (!activeStroke.current || !canvasRef.current) return;
@@ -73,16 +90,32 @@ export function DrawingCanvas({ drawing, onChange }: DrawingCanvasProps) {
       }}
       onPointerCancel={() => { activeStroke.current = null; }}
     />
-    {onChange && <div>
-      <button onClick={() => {
-        const previous = history.at(-1) ?? { strokes: [] };
-        setHistory(items => items.slice(0, -1));
-        publish(previous);
-      }}>↶ Cofnij</button>
-      <button onClick={() => {
-        setHistory(previous => [...previous, drawing]);
-        publish({ strokes: [] });
-      }}>Wyczyść</button>
-    </div>}
+    {onChange && <>
+      <div className="drawing-tools">
+        <div className="color-palette" aria-label="Kolor pisaka">
+          {COLORS.map(option => <button
+            key={option.value}
+            type="button"
+            className={!eraser && color === option.value ? 'active' : ''}
+            style={{ backgroundColor: option.value }}
+            aria-label={option.label}
+            title={option.label}
+            onClick={() => { setColor(option.value); setEraser(false); }}
+          />)}
+        </div>
+        <button type="button" className={eraser ? 'active eraser' : 'eraser'} onClick={() => setEraser(value => !value)}>⌫ Gumka</button>
+      </div>
+      <div className="drawing-actions">
+        <button onClick={() => {
+          const previous = history.at(-1) ?? { strokes: [] };
+          setHistory(items => items.slice(0, -1));
+          publish(previous);
+        }}>↶ Cofnij</button>
+        <button onClick={() => {
+          setHistory(previous => [...previous, drawing]);
+          publish({ strokes: [] });
+        }}>Wyczyść wszystko</button>
+      </div>
+    </>}
   </div>;
 }

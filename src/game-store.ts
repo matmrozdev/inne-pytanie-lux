@@ -31,6 +31,7 @@ export interface RoomMeta {
   categories: Category[];
   rounds: number;
   questionsPerRound: number;
+  turnSeconds: number;
 }
 
 export interface HostPrivateState {
@@ -60,6 +61,7 @@ export async function createRoom(
       categories,
       rounds: settings.rounds,
       questionsPerRound: settings.questionsPerRound,
+      turnSeconds: settings.turnSeconds,
     };
     try {
       // A transaction would need read access before this room exists. The
@@ -172,6 +174,7 @@ export async function startRound(
   alternateUid: string,
   playerUids: string[],
   usedIds: number[],
+  turnSeconds: number,
 ): Promise<void> {
   const assignments = Object.fromEntries(playerUids.map(uid => [uid, {
     roundId,
@@ -180,7 +183,7 @@ export async function startRound(
   await update(ref(database, roomPath(code)), {
     assignments,
     answers: null,
-    public: { phase: 'answering', roundId },
+    public: { phase: 'answering', roundId, deadlineAt: Date.now() + turnSeconds * 1000 },
     hostPrivate: { pairId: pair.id, alternateUid, usedIds },
   });
 }

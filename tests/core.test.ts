@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createRoomCode,
+  decodeDrawing,
+  encodeDrawing,
   getQuestionProgress,
   isGameComplete,
   normalizeRoomCode,
@@ -25,12 +27,17 @@ test('round progress supports multiple questions per round', () => {
   assert.deepEqual(getQuestionProgress(1, 3), { roundNumber: 1, questionNumber: 1 });
   assert.deepEqual(getQuestionProgress(3, 3), { roundNumber: 1, questionNumber: 3 });
   assert.deepEqual(getQuestionProgress(4, 3), { roundNumber: 2, questionNumber: 1 });
-  assert.equal(isGameComplete(8, { rounds: 3, questionsPerRound: 3 }), false);
-  assert.equal(isGameComplete(9, { rounds: 3, questionsPerRound: 3 }), true);
+  assert.equal(isGameComplete(8, { rounds: 3, questionsPerRound: 3, turnSeconds: 60 }), false);
+  assert.equal(isGameComplete(9, { rounds: 3, questionsPerRound: 3, turnSeconds: 60 }), true);
 });
 
 test('shuffle preserves every item', () => {
   assert.deepEqual([...shuffle([1, 2, 3])].sort(), [1, 2, 3]);
+});
+
+test('drawing serialization preserves pen color and eraser width', () => {
+  const drawing = { strokes: [{ points: [{ x: 0.2, y: 0.3 }], color: '#2563eb', width: 10 }] };
+  assert.deepEqual(decodeDrawing(encodeDrawing(drawing)), drawing);
 });
 
 test('room codes avoid ambiguous characters', () => {
