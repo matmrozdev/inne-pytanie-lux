@@ -209,6 +209,43 @@ header em {
   display: grid;
 }
 
+.emoji-toggle {
+  width: 100%;
+  margin-top: 2px;
+  padding: 11px;
+}
+
+.emoji-picker {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.emoji-picker button {
+  min-width: 0;
+  padding: 7px 2px;
+  background: #ffffff12;
+  font-size: 25px;
+  line-height: 1.2;
+}
+
+.sticker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.8fr;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.sticker-actions button {
+  min-width: 0;
+  padding: 9px 5px;
+  font-size: 12px;
+}
+
 .question-timer {
   display: flex;
   align-items: center;
@@ -299,5 +336,9 @@ header em {
 
   .vote-options {
     grid-template-columns: 1fr;
+  }
+
+  .emoji-picker {
+    grid-template-columns: repeat(5, 1fr);
   }
 }

@@ -10,7 +10,7 @@ export const DEFAULT_ROUNDS = 3;
 export const DEFAULT_QUESTIONS_PER_ROUND = 3;
 export const MAX_ROUNDS = 20;
 export const MAX_QUESTIONS_PER_ROUND = 10;
-export const TURN_SECONDS_OPTIONS = [30, 60, 120, 160] as const;
+export const TURN_SECONDS_OPTIONS = [30, 60, 90, 120] as const;
 export const DEFAULT_TURN_SECONDS = 60;
 
 export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'voting' | 'results' | 'finished';
@@ -40,8 +40,17 @@ export interface Stroke {
   width?: number;
 }
 
+export interface EmojiSticker {
+  id: string;
+  emoji: string;
+  x: number;
+  y: number;
+  size: number;
+}
+
 export interface Drawing {
   strokes: Stroke[];
+  stickers?: EmojiSticker[];
 }
 
 export interface PublicRound {
@@ -162,6 +171,7 @@ export function decodeDrawing(value?: string): Drawing {
   try {
     const parsed = JSON.parse(value) as Drawing;
     if (!Array.isArray(parsed.strokes)) return { strokes: [] };
+    if (parsed.stickers !== undefined && !Array.isArray(parsed.stickers)) delete parsed.stickers;
     return parsed;
   } catch {
     return { strokes: [] };

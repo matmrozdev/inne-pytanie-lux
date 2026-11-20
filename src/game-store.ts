@@ -99,6 +99,14 @@ export async function joinRoom(code: string, playerName: string): Promise<User> 
   const metaSnapshot = await get(ref(database, roomPath(code, 'meta')));
   const meta = metaSnapshot.val() as RoomMeta | null;
   if (!meta || meta.expiresAt <= Date.now()) throw new Error('Pokój nie istnieje albo już wygasł.');
+  try {
+    const publicSnapshot = await get(ref(database, roomPath(code, 'public')));
+    const publicRound = publicSnapshot.val() as PublicRound | null;
+    if (publicRound?.phase !== 'lobby') throw new Error('Gra już trwa. Poproś hosta o powrót do lobby.');
+  } catch (caught) {
+    if (caught instanceof Error && caught.message.startsWith('Gra już trwa')) throw caught;
+    throw new Error('Gra już trwa. Poproś hosta o powrót do lobby.');
+  }
 
   await set(ref(database, roomPath(code, `members/${user.uid}`)), {
     uid: user.uid,

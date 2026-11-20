@@ -121,6 +121,8 @@ test('only the host can change valid game settings', async () => {
   await assertFails(update(ref(guest, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 120 }));
   await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 0, questionsPerRound: 2, turnSeconds: 120 }));
   await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 45 }));
+  await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 160 }));
+  await assertSucceeds(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 90 }));
   await assertSucceeds(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2, turnSeconds: 120 }));
 });
 
@@ -197,4 +199,26 @@ test('votes stay private until results and only the host can publish scores', as
   }));
   await assertSucceeds(get(ref(guest, `rooms/${room}/votes`)));
   await assertSucceeds(get(ref(guest, `rooms/${room}/scores`)));
+});
+
+test('new players can only inspect and join a room while it is in the lobby', async () => {
+  const newcomerUid = 'newcomer';
+  const newcomer = environment.authenticatedContext(newcomerUid).database();
+  const member = { uid: newcomerUid, name: 'Newcomer', connected: true, joinedAt: Date.now(), lastSeen: Date.now() };
+
+  await environment.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), `rooms/${room}/public`), {
+      phase: 'answering',
+      roundId: 2,
+      deadlineAt: Date.now() + 60_000,
+    });
+  });
+  await assertFails(get(ref(newcomer, `rooms/${room}/public`)));
+  await assertFails(set(ref(newcomer, `rooms/${room}/members/${newcomerUid}`), member));
+
+  await environment.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), `rooms/${room}/public`), { phase: 'lobby', roundId: 0 });
+  });
+  await assertSucceeds(get(ref(newcomer, `rooms/${room}/public`)));
+  await assertSucceeds(set(ref(newcomer, `rooms/${room}/members/${newcomerUid}`), member));
 });

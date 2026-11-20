@@ -38,8 +38,11 @@ test('shuffle preserves every item', () => {
   assert.deepEqual([...shuffle([1, 2, 3])].sort(), [1, 2, 3]);
 });
 
-test('drawing serialization preserves pen color and eraser width', () => {
-  const drawing = { strokes: [{ points: [{ x: 0.2, y: 0.3 }], color: '#2563eb', width: 10 }] };
+test('drawing serialization preserves pen color, eraser width, and emoji stickers', () => {
+  const drawing = {
+    strokes: [{ points: [{ x: 0.2, y: 0.3 }], color: '#2563eb', width: 10 }],
+    stickers: [{ id: 'emoji-1', emoji: '😂', x: 0.5, y: 0.4, size: 0.16 }],
+  };
   assert.deepEqual(decodeDrawing(encodeDrawing(drawing)), drawing);
 });
 

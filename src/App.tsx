@@ -319,7 +319,7 @@ function AnswerGallery({ members, answers }: {
   </div>;
 }
 
-function Results({ round, members, answers, votes, scores, isHost, progressLabel, nextLabel, pending, error, onNext }: {
+function Results({ round, members, answers, votes, scores, isHost, progressLabel, nextLabel, pending, error, onNext, onReturnToLobby }: {
   round: PublicRound;
   members: Record<string, Player>;
   answers: Record<string, StoredAnswer>;
@@ -331,6 +331,7 @@ function Results({ round, members, answers, votes, scores, isHost, progressLabel
   pending: boolean;
   error: string;
   onNext: () => Promise<void>;
+  onReturnToLobby: () => Promise<void>;
 }) {
   const playerUids = Object.keys(members);
   const roundPoints = calculateRoundScores(votes, round.alternateUid ?? '', playerUids);
@@ -361,6 +362,7 @@ function Results({ round, members, answers, votes, scores, isHost, progressLabel
     <ErrorMessage error={error} />
     {isHost && <div className="actions">
       <button className="primary" disabled={pending} onClick={() => void onNext()}>{pending ? 'Przechodzenie…' : nextLabel}</button>
+      <button className="danger" disabled={pending} onClick={() => void onReturnToLobby()}>Przerwij i wróć do lobby</button>
     </div>}
     {!isHost && <p>Host przejdzie dalej.</p>}
   </section></Shell>;
@@ -384,7 +386,9 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const settings: GameSettings = {
     rounds: meta?.rounds ?? DEFAULT_ROUNDS,
     questionsPerRound: meta?.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND,
-    turnSeconds: meta?.turnSeconds ?? DEFAULT_TURN_SECONDS,
+    turnSeconds: TURN_SECONDS_OPTIONS.includes(meta?.turnSeconds as typeof TURN_SECONDS_OPTIONS[number])
+      ? meta!.turnSeconds
+      : DEFAULT_TURN_SECONDS,
   };
   const progress = getQuestionProgress(round.roundId, settings.questionsPerRound);
   const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'voting' || round.phase === 'results';
@@ -418,7 +422,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   useEffect(() => isHost ? listenHostPrivate(code, setHostPrivate) : undefined, [code, isHost]);
   useEffect(() => {
     if (!meta || !isHost) return;
-    if (meta.rounds && meta.questionsPerRound && meta.turnSeconds) return;
+    if (meta.rounds && meta.questionsPerRound && TURN_SECONDS_OPTIONS.includes(meta.turnSeconds as typeof TURN_SECONDS_OPTIONS[number])) return;
     void updateGameSettings(code, settings).catch(() => setError('Nie udało się uzupełnić ustawień pokoju.'));
   }, [code, isHost, meta, settings.questionsPerRound, settings.rounds, settings.turnSeconds]);
   useEffect(() => {
@@ -489,6 +493,20 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
     }
   };
 
+  const resetGameToLobby = async (confirmReset = true) => {
+    if (confirmReset && !window.confirm('Przerwać bieżącą grę i wrócić do lobby? Wyniki zostaną wyzerowane.')) return;
+    try {
+      setHostActionPending(true);
+      setError('');
+      await returnToLobby(code);
+      setDrawing({ strokes: [], stickers: [] });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Nie udało się wrócić do lobby.');
+    } finally {
+      setHostActionPending(false);
+    }
+  };
+
   if (round.phase === 'finished') {
     return <Shell><section className="home finished-screen">
       <div className="logo">✓</div>
@@ -502,8 +520,9 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
           <strong>{scores[player.uid] ?? 0} pkt</strong>
         </div>)}
       </div>
+      <ErrorMessage error={error} />
       {isHost
-        ? <button className="primary" onClick={() => void returnToLobby(code)}>Zagraj ponownie</button>
+        ? <button className="primary" disabled={hostActionPending} onClick={() => void resetGameToLobby(false)}>Zagraj ponownie</button>
         : <p>Host może rozpocząć następną grę.</p>}
     </section></Shell>;
   }
@@ -523,6 +542,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
         ? 'Zakończ grę'
         : progress.questionNumber === settings.questionsPerRound ? 'Następna runda' : 'Następne pytanie'}
       onNext={() => isGameComplete(round.roundId, settings) ? completeGame() : beginRound()}
+      onReturnToLobby={resetGameToLobby}
     />;
   }
 
@@ -533,7 +553,10 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       <AnswerGallery members={members} answers={answers} />
       <ErrorMessage error={error} />
       {isHost
-        ? <button className="primary" disabled={hostActionPending} onClick={() => void beginVoting()}>{hostActionPending ? 'Uruchamianie…' : 'Rozpocznij głosowanie'}</button>
+        ? <div className="actions">
+          <button className="primary" disabled={hostActionPending} onClick={() => void beginVoting()}>{hostActionPending ? 'Uruchamianie…' : 'Rozpocznij głosowanie'}</button>
+          <button className="danger" disabled={hostActionPending} onClick={() => void resetGameToLobby()}>Przerwij i wróć do lobby</button>
+        </div>
         : <p>Obejrzyj odpowiedzi. Host za chwilę rozpocznie głosowanie.</p>}
     </section></Shell>;
   }
@@ -564,6 +587,7 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       {isHost && <div className="ready-list">{allPlayers.map(player => <span key={player.uid}>
         {votes[player.uid]?.roundId === round.roundId ? '✓' : '○'} {player.name}
       </span>)}</div>}
+      {isHost && <button className="danger" disabled={hostActionPending} onClick={() => void resetGameToLobby()}>Przerwij i wróć do lobby</button>}
     </section></Shell>;
   }
 
@@ -586,7 +610,8 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       <ErrorMessage error={error} />
       {isHost
         ? <><div className="ready-list">{Object.values(members).map(player => <span key={player.uid}>{answers[player.uid]?.roundId === round.roundId ? '✓' : '○'} {player.name}</span>)}</div>
-          <button className="primary" disabled={!currentPair} onClick={() => currentPair && revealAnswers(code, round.roundId, currentPair.questionA)}>Pokaż odpowiedzi</button></>
+          <button className="primary" disabled={!currentPair} onClick={() => currentPair && revealAnswers(code, round.roundId, currentPair.questionA)}>Pokaż odpowiedzi</button>
+          <button className="danger" disabled={hostActionPending} onClick={() => void resetGameToLobby()}>Przerwij i wróć do lobby</button></>
         : <p>Odpowiedź zapisuje się automatycznie. Czekaj na hosta.</p>}
     </section></Shell>;
   }
