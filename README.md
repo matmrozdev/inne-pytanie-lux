@@ -4,6 +4,8 @@ An online-first Polish party game PWA for iPhone, Android, and desktop. Players 
 
 The original peer-to-peer application remains available in the separate `inne-pytanie-pwa` repository. This repository does not use WebRTC signaling.
 
+The host can configure one to twenty rounds and one to ten question pairs per round. The local database currently contains 181 paired questions across 19 categories, including Polish internet, memes, movies, places, technology, and everyday topics. Used pairs are avoided until the selected category pool is exhausted.
+
 ## Architecture
 
 - React, TypeScript, and Vite

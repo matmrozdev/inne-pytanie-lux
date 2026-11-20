@@ -17,6 +17,7 @@ import {
   ROOM_TTL_MS,
   sanitizeName,
   type Assignment,
+  type GameSettings,
   type Player,
   type PublicRound,
   type StoredAnswer,
@@ -28,6 +29,8 @@ export interface RoomMeta {
   createdAt: number;
   expiresAt: number;
   categories: Category[];
+  rounds: number;
+  questionsPerRound: number;
 }
 
 export interface HostPrivateState {
@@ -38,7 +41,11 @@ export interface HostPrivateState {
 
 const roomPath = (code: string, child = '') => `rooms/${code}${child ? `/${child}` : ''}`;
 
-export async function createRoom(hostName: string, categories: Category[]): Promise<{ code: string; user: User }> {
+export async function createRoom(
+  hostName: string,
+  categories: Category[],
+  settings: GameSettings,
+): Promise<{ code: string; user: User }> {
   const user = await ensureAnonymousUser();
   const name = sanitizeName(hostName);
   if (!name) throw new Error('Podaj imię hosta.');
@@ -51,6 +58,8 @@ export async function createRoom(hostName: string, categories: Category[]): Prom
       createdAt: now,
       expiresAt: now + ROOM_TTL_MS,
       categories,
+      rounds: settings.rounds,
+      questionsPerRound: settings.questionsPerRound,
     };
     try {
       // A transaction would need read access before this room exists. The
@@ -152,6 +161,10 @@ export async function updateCategories(code: string, categories: Category[]): Pr
   await set(ref(database, roomPath(code, 'meta/categories')), categories);
 }
 
+export async function updateGameSettings(code: string, settings: GameSettings): Promise<void> {
+  await update(ref(database, roomPath(code, 'meta')), settings);
+}
+
 export async function startRound(
   code: string,
   roundId: number,
@@ -195,6 +208,19 @@ export async function revealSecondQuestion(
     questionA: pair.questionA,
     questionB: pair.questionB,
     alternateUid,
+  });
+}
+
+export async function finishGame(code: string, roundId: number): Promise<void> {
+  await set(ref(database, roomPath(code, 'public')), { phase: 'finished', roundId });
+}
+
+export async function returnToLobby(code: string): Promise<void> {
+  await update(ref(database, roomPath(code)), {
+    assignments: null,
+    answers: null,
+    hostPrivate: null,
+    public: { phase: 'lobby', roundId: 0 },
   });
 }
 

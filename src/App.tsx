@@ -4,12 +4,20 @@ import { DrawingCanvas } from './DrawingCanvas';
 import {
   chooseAlternateUid,
   chooseQuestion,
+  clampInteger,
   decodeDrawing,
+  DEFAULT_QUESTIONS_PER_ROUND,
+  DEFAULT_ROUNDS,
   encodeDrawing,
+  getQuestionProgress,
+  isGameComplete,
+  MAX_QUESTIONS_PER_ROUND,
+  MAX_ROUNDS,
   MIN_PLAYERS,
   normalizeRoomCode,
   type Assignment,
   type Drawing,
+  type GameSettings,
   type Player,
   type PublicRound,
   type StoredAnswer,
@@ -17,6 +25,7 @@ import {
 import {
   closeRoom,
   createRoom,
+  finishGame,
   joinRoom,
   listenAnswers,
   listenAssignment,
@@ -25,11 +34,13 @@ import {
   listenMeta,
   listenPublicRound,
   removePlayer,
+  returnToLobby,
   revealAnswers,
   revealSecondQuestion,
   startRound,
   submitAnswer,
   updateCategories,
+  updateGameSettings,
   type HostPrivateState,
   type RoomMeta,
 } from './game-store';
@@ -85,6 +96,11 @@ function CategoryPicker({ selected, onChange, disabled = false }: {
   disabled?: boolean;
 }) {
   return <div className="chips">
+    <button
+      disabled={disabled}
+      className={selected.length === CATEGORIES.length ? 'on' : ''}
+      onClick={() => onChange(selected.length === CATEGORIES.length ? [] : [...CATEGORIES])}
+    >✨ Wszystkie</button>
     {CATEGORIES.map(category => <button
       key={category}
       disabled={disabled}
@@ -96,9 +112,66 @@ function CategoryPicker({ selected, onChange, disabled = false }: {
   </div>;
 }
 
+function NumberSetting({ label, value, minimum, maximum, onChange, disabled = false }: {
+  label: string;
+  value: number;
+  minimum: number;
+  maximum: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  return <label className="number-setting">
+    <span>{label}</span>
+    <div>
+      <button disabled={disabled || value <= minimum} onClick={() => onChange(value - 1)} aria-label={`Zmniejsz: ${label}`}>−</button>
+      <input
+        aria-label={label}
+        type="number"
+        inputMode="numeric"
+        min={minimum}
+        max={maximum}
+        disabled={disabled}
+        value={value}
+        onChange={event => onChange(clampInteger(Number(event.target.value), minimum, maximum))}
+      />
+      <button disabled={disabled || value >= maximum} onClick={() => onChange(value + 1)} aria-label={`Zwiększ: ${label}`}>+</button>
+    </div>
+  </label>;
+}
+
+function GameSettingsPicker({ settings, onChange, disabled = false }: {
+  settings: GameSettings;
+  onChange: (settings: GameSettings) => void;
+  disabled?: boolean;
+}) {
+  return <div className="settings-grid">
+    <NumberSetting
+      label="Liczba rund"
+      value={settings.rounds}
+      minimum={1}
+      maximum={MAX_ROUNDS}
+      disabled={disabled}
+      onChange={rounds => onChange({ ...settings, rounds })}
+    />
+    <NumberSetting
+      label="Pytań w rundzie"
+      value={settings.questionsPerRound}
+      minimum={1}
+      maximum={MAX_QUESTIONS_PER_ROUND}
+      disabled={disabled}
+      onChange={questionsPerRound => onChange({ ...settings, questionsPerRound })}
+    />
+    <p>Łącznie: <strong>{settings.rounds * settings.questionsPerRound}</strong> pytań</p>
+  </div>;
+}
+
 function HostSetup({ onReady }: { onReady: (code: string, uid: string) => void }) {
   const [name, setName] = useState(localStorage.getItem('lux-name') ?? 'Host');
   const [categories, setCategories] = useState<Category[]>(['Losowe']);
+  const [settings, setSettings] = useState<GameSettings>({
+    rounds: clampInteger(Number(localStorage.getItem('lux-rounds') ?? DEFAULT_ROUNDS), 1, MAX_ROUNDS),
+    questionsPerRound: clampInteger(Number(localStorage.getItem('lux-questions-per-round') ?? DEFAULT_QUESTIONS_PER_ROUND), 1, MAX_QUESTIONS_PER_ROUND),
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   return <Shell><section className="screen">
@@ -107,13 +180,17 @@ function HostSetup({ onReady }: { onReady: (code: string, uid: string) => void }
     <label>Twoje imię<input value={name} maxLength={30} onChange={event => setName(event.target.value)} /></label>
     <h2>Kategorie</h2>
     <CategoryPicker selected={categories} onChange={setCategories} />
+    <h2>Ustawienia gry</h2>
+    <GameSettingsPicker settings={settings} onChange={setSettings} />
     <ErrorMessage error={error} />
     <button className="primary" disabled={loading || !name.trim() || !categories.length} onClick={async () => {
       setLoading(true);
       setError('');
       try {
         localStorage.setItem('lux-name', name.trim());
-        const result = await createRoom(name, categories);
+        localStorage.setItem('lux-rounds', String(settings.rounds));
+        localStorage.setItem('lux-questions-per-round', String(settings.questionsPerRound));
+        const result = await createRoom(name, categories, settings);
         onReady(result.code, result.user.uid);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Nie udało się utworzyć pokoju.');
@@ -174,16 +251,18 @@ function PlayerList({ members, hostUid, currentUid, onRemove }: {
   </div>;
 }
 
-function Results({ round, members, answers, isHost, onSecond, onNext }: {
+function Results({ round, members, answers, isHost, progressLabel, nextLabel, onSecond, onNext }: {
   round: PublicRound;
   members: Record<string, Player>;
   answers: Record<string, StoredAnswer>;
   isHost: boolean;
+  progressLabel: string;
+  nextLabel: string;
   onSecond: () => void;
   onNext: () => void;
 }) {
   return <Shell><section className="screen">
-    <p className="tag">Pytanie większości</p>
+    <p className="tag">{progressLabel} · pytanie większości</p>
     <h1>{round.questionA}</h1>
     <div className="answers">
       {Object.values(members).map(player => <article key={player.uid}>
@@ -200,7 +279,7 @@ function Results({ round, members, answers, isHost, onSecond, onNext }: {
     </div>}
     {isHost && <div className="actions">
       {round.phase === 'revealed' && <button onClick={onSecond}>Pokaż drugie pytanie</button>}
-      <button className="primary" onClick={onNext}>Kolejna runda</button>
+      <button className="primary" onClick={onNext}>{nextLabel}</button>
     </div>}
   </section></Shell>;
 }
@@ -215,6 +294,11 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const [drawing, setDrawing] = useState<Drawing>({ strokes: [] });
   const [error, setError] = useState('');
   const isHost = meta?.hostUid === uid;
+  const settings: GameSettings = {
+    rounds: meta?.rounds ?? DEFAULT_ROUNDS,
+    questionsPerRound: meta?.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND,
+  };
+  const progress = getQuestionProgress(round.roundId, settings.questionsPerRound);
   const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'second';
 
   useEffect(() => listenMeta(code, setMeta), [code]);
@@ -248,22 +332,40 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
     }
   };
 
+  if (round.phase === 'finished') {
+    return <Shell><section className="home finished-screen">
+      <div className="logo">✓</div>
+      <p className="tag">Koniec gry</p>
+      <h1>Rozegrano wszystkie pytania</h1>
+      <p>{settings.rounds} rund · {settings.questionsPerRound} pytań w rundzie · {round.roundId} pytań łącznie</p>
+      {isHost
+        ? <button className="primary" onClick={() => void returnToLobby(code)}>Zagraj ponownie</button>
+        : <p>Host może rozpocząć następną grę.</p>}
+    </section></Shell>;
+  }
+
   if (round.phase === 'revealed' || round.phase === 'second') {
     return <Results
       round={round}
       members={members}
       answers={answers}
       isHost={isHost}
+      progressLabel={`Runda ${progress.roundNumber}/${settings.rounds} · Pytanie ${progress.questionNumber}/${settings.questionsPerRound}`}
+      nextLabel={isGameComplete(round.roundId, settings)
+        ? 'Zakończ grę'
+        : progress.questionNumber === settings.questionsPerRound ? 'Następna runda' : 'Następne pytanie'}
       onSecond={async () => {
         if (currentPair && hostPrivate) await revealSecondQuestion(code, round.roundId, currentPair, hostPrivate.alternateUid);
       }}
-      onNext={beginRound}
+      onNext={() => isGameComplete(round.roundId, settings)
+        ? void finishGame(code, round.roundId)
+        : void beginRound()}
     />;
   }
 
   if (round.phase === 'answering') {
     return <Shell><section className="screen">
-      <p className="tag">Runda {round.roundId}</p>
+      <p className="tag">Runda {progress.roundNumber}/{settings.rounds} · Pytanie {progress.questionNumber}/{settings.questionsPerRound}</p>
       <h1>{assignment?.question ?? 'Pobieranie pytania…'}</h1>
       <DrawingCanvas drawing={drawing} onChange={nextDrawing => {
         setDrawing(nextDrawing);
@@ -288,7 +390,10 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
     {isHost && <><h2>Kategorie</h2><CategoryPicker selected={meta.categories} onChange={categories => {
       if (!categories.length) return;
       void updateCategories(code, categories);
-    }} /></>}
+    }} />
+      <h2>Ustawienia gry</h2>
+      <GameSettingsPicker settings={settings} onChange={nextSettings => void updateGameSettings(code, nextSettings)} />
+    </>}
     <h2>Gracze ({connectedPlayers.length}/{MIN_PLAYERS}+)</h2>
     <PlayerList members={members} hostUid={meta.hostUid} currentUid={uid} onRemove={isHost ? playerUid => void removePlayer(code, playerUid) : undefined} />
     <ErrorMessage error={error} />

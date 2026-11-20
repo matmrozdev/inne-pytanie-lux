@@ -30,6 +30,8 @@ before(async () => {
         createdAt: Date.now(),
         expiresAt: Date.now() + 60_000,
         categories: ['Losowe'],
+        rounds: 3,
+        questionsPerRound: 3,
       },
       members: {
         [hostUid]: { uid: hostUid, name: 'Host', connected: true, joinedAt: 1, lastSeen: 1 },
@@ -66,6 +68,8 @@ test('an authenticated host can create a room without reading it first', async (
     createdAt: Date.now(),
     expiresAt: Date.now() + 60_000,
     categories: ['Losowe'],
+    rounds: 3,
+    questionsPerRound: 3,
   }));
   await assertSucceeds(set(ref(creator, `rooms/${newRoom}/members/${creatorUid}`), {
     uid: creatorUid,
@@ -107,6 +111,27 @@ test('the host can atomically start a round while a guest cannot', async () => {
   const guest = environment.authenticatedContext(guestUid).database();
   await assertFails(update(ref(guest, `rooms/${room}`), nextRound));
   await assertSucceeds(update(ref(host, `rooms/${room}`), nextRound));
+});
+
+test('only the host can change valid game settings', async () => {
+  const host = environment.authenticatedContext(hostUid).database();
+  const guest = environment.authenticatedContext(guestUid).database();
+  await assertFails(update(ref(guest, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2 }));
+  await assertFails(update(ref(host, `rooms/${room}/meta`), { rounds: 0, questionsPerRound: 2 }));
+  await assertSucceeds(update(ref(host, `rooms/${room}/meta`), { rounds: 5, questionsPerRound: 2 }));
+});
+
+test('the host can finish a game and return everyone to the lobby', async () => {
+  const host = environment.authenticatedContext(hostUid).database();
+  const guest = environment.authenticatedContext(guestUid).database();
+  await assertFails(set(ref(guest, `rooms/${room}/public`), { phase: 'finished', roundId: 10 }));
+  await assertSucceeds(set(ref(host, `rooms/${room}/public`), { phase: 'finished', roundId: 10 }));
+  await assertSucceeds(update(ref(host, `rooms/${room}`), {
+    assignments: null,
+    answers: null,
+    hostPrivate: null,
+    public: { phase: 'lobby', roundId: 0 },
+  }));
 });
 
 test('answers are private until the host reveals them', async () => {

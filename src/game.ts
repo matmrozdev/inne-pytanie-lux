@@ -6,7 +6,17 @@ export const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 export const ROOM_CODE_LENGTH = 8;
 export const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'second';
+export const DEFAULT_ROUNDS = 3;
+export const DEFAULT_QUESTIONS_PER_ROUND = 3;
+export const MAX_ROUNDS = 20;
+export const MAX_QUESTIONS_PER_ROUND = 10;
+
+export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'second' | 'finished';
+
+export interface GameSettings {
+  rounds: number;
+  questionsPerRound: number;
+}
 
 export interface Player {
   uid: string;
@@ -46,6 +56,26 @@ export interface StoredAnswer {
   roundId: number;
   drawing: string;
   submittedAt: number;
+}
+
+export function clampInteger(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, Math.round(value) || minimum));
+}
+
+export function getQuestionProgress(roundId: number, questionsPerRound: number): {
+  roundNumber: number;
+  questionNumber: number;
+} {
+  const safeQuestionCount = clampInteger(questionsPerRound, 1, MAX_QUESTIONS_PER_ROUND);
+  const safeRoundId = Math.max(1, roundId);
+  return {
+    roundNumber: Math.floor((safeRoundId - 1) / safeQuestionCount) + 1,
+    questionNumber: ((safeRoundId - 1) % safeQuestionCount) + 1,
+  };
+}
+
+export function isGameComplete(roundId: number, settings: GameSettings): boolean {
+  return roundId >= settings.rounds * settings.questionsPerRound;
 }
 
 export function sanitizeName(value: string): string {

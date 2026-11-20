@@ -76,3 +76,68 @@ header em {
   border-color: #fb718555;
   color: #fda4af;
 }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.settings-grid > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #bab6d2;
+  text-align: center;
+}
+
+.number-setting {
+  margin: 0;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.number-setting > span {
+  display: block;
+  margin-bottom: 9px;
+  color: #d8d4ed;
+  font-size: 13px;
+  text-align: center;
+}
+
+.number-setting > div {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  gap: 5px;
+}
+
+.number-setting button,
+.number-setting input {
+  min-width: 0;
+  margin: 0;
+  padding: 9px 4px;
+  text-align: center;
+}
+
+.number-setting input {
+  appearance: textfield;
+  font-weight: 900;
+}
+
+.number-setting input::-webkit-inner-spin-button {
+  appearance: none;
+}
+
+.finished-screen .logo {
+  background: #34d399;
+}
+
+@media (max-width: 380px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid > p {
+    grid-column: 1;
+  }
+}
