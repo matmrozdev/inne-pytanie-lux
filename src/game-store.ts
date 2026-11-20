@@ -20,7 +20,9 @@ import {
   type GameSettings,
   type Player,
   type PublicRound,
+  type Scores,
   type StoredAnswer,
+  type Vote,
 } from './game';
 import type { Category, QuestionPair } from './questions';
 
@@ -155,6 +157,24 @@ export function listenAnswers(
   });
 }
 
+export function listenVotes(
+  code: string,
+  uid: string,
+  canSeeAll: boolean,
+  callback: (votes: Record<string, Vote>) => void,
+): Unsubscribe {
+  if (canSeeAll) {
+    return onValue(ref(database, roomPath(code, 'votes')), snapshot => callback(snapshot.val() ?? {}));
+  }
+  return onValue(ref(database, roomPath(code, `votes/${uid}`)), snapshot => {
+    callback(snapshot.exists() ? { [uid]: snapshot.val() } : {});
+  });
+}
+
+export function listenScores(code: string, callback: (scores: Scores) => void): Unsubscribe {
+  return onValue(ref(database, roomPath(code, 'scores')), snapshot => callback(snapshot.val() ?? {}));
+}
+
 export function listenHostPrivate(code: string, callback: (state: HostPrivateState | null) => void): Unsubscribe {
   return onValue(ref(database, roomPath(code, 'hostPrivate')), snapshot => callback(snapshot.val()));
 }
@@ -183,6 +203,7 @@ export async function startRound(
   await update(ref(database, roomPath(code)), {
     assignments,
     answers: null,
+    votes: null,
     public: { phase: 'answering', roundId, deadlineAt: Date.now() + turnSeconds * 1000 },
     hostPrivate: { pairId: pair.id, alternateUid, usedIds },
   });
@@ -199,18 +220,37 @@ export async function revealAnswers(code: string, roundId: number, questionA: st
   await set(ref(database, roomPath(code, 'public')), { phase: 'revealed', roundId, questionA });
 }
 
-export async function revealSecondQuestion(
+export async function startVoting(
+  code: string,
+  roundId: number,
+  questionA: string,
+): Promise<void> {
+  await set(ref(database, roomPath(code, 'public')), { phase: 'voting', roundId, questionA });
+}
+
+export async function submitVote(code: string, uid: string, vote: Vote): Promise<void> {
+  await set(ref(database, roomPath(code, `votes/${uid}`)), {
+    ...vote,
+    submittedAt: serverTimestamp(),
+  });
+}
+
+export async function finishVoting(
   code: string,
   roundId: number,
   pair: QuestionPair,
   alternateUid: string,
+  scores: Scores,
 ): Promise<void> {
-  await set(ref(database, roomPath(code, 'public')), {
-    phase: 'second',
-    roundId,
-    questionA: pair.questionA,
-    questionB: pair.questionB,
-    alternateUid,
+  await update(ref(database, roomPath(code)), {
+    scores,
+    public: {
+      phase: 'results',
+      roundId,
+      questionA: pair.questionA,
+      questionB: pair.questionB,
+      alternateUid,
+    },
   });
 }
 
@@ -222,6 +262,8 @@ export async function returnToLobby(code: string): Promise<void> {
   await update(ref(database, roomPath(code)), {
     assignments: null,
     answers: null,
+    votes: null,
+    scores: null,
     hostPrivate: null,
     public: { phase: 'lobby', roundId: 0 },
   });

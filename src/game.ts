@@ -13,7 +13,7 @@ export const MAX_QUESTIONS_PER_ROUND = 10;
 export const TURN_SECONDS_OPTIONS = [30, 60, 120, 160] as const;
 export const DEFAULT_TURN_SECONDS = 60;
 
-export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'second' | 'finished';
+export type GamePhase = 'lobby' | 'answering' | 'revealed' | 'voting' | 'results' | 'finished';
 
 export interface GameSettings {
   rounds: number;
@@ -62,6 +62,34 @@ export interface StoredAnswer {
   roundId: number;
   drawing: string;
   submittedAt: number;
+}
+
+export interface Vote {
+  roundId: number;
+  targetUid: string;
+  submittedAt: number;
+}
+
+export type Scores = Record<string, number>;
+
+export function calculateRoundScores(
+  votes: Record<string, Vote>,
+  alternateUid: string,
+  playerUids: string[],
+): Scores {
+  const points = Object.fromEntries(playerUids.map(uid => [uid, 0]));
+  for (const voterUid of playerUids) {
+    if (voterUid === alternateUid) continue;
+    if (votes[voterUid]?.targetUid === alternateUid) points[voterUid] += 1;
+    else points[alternateUid] += 1;
+  }
+  return points;
+}
+
+export function addScores(current: Scores, roundPoints: Scores): Scores {
+  return Object.fromEntries(
+    Object.keys(roundPoints).map(uid => [uid, (current[uid] ?? 0) + roundPoints[uid]]),
+  );
 }
 
 export function clampInteger(value: number, minimum: number, maximum: number): number {

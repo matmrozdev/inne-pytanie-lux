@@ -152,3 +152,49 @@ test('answers are private until the host reveals them', async () => {
   await assertSucceeds(get(ref(guest, `rooms/${room}/answers/${hostUid}`)));
   await assertSucceeds(get(ref(guest, `rooms/${room}/answers`)));
 });
+
+test('votes stay private until results and only the host can publish scores', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), `rooms/${room}/public`), {
+      phase: 'voting',
+      roundId: 1,
+      questionA: 'Question',
+    });
+    await set(ref(context.database(), `rooms/${room}/votes`), null);
+  });
+  const guest = environment.authenticatedContext(guestUid).database();
+  const host = environment.authenticatedContext(hostUid).database();
+
+  await assertFails(set(ref(guest, `rooms/${room}/votes/${guestUid}`), {
+    roundId: 1,
+    targetUid: guestUid,
+    submittedAt: Date.now(),
+  }));
+  await assertSucceeds(set(ref(guest, `rooms/${room}/votes/${guestUid}`), {
+    roundId: 1,
+    targetUid: hostUid,
+    submittedAt: Date.now(),
+  }));
+  await assertFails(set(ref(guest, `rooms/${room}/votes/${guestUid}`), {
+    roundId: 1,
+    targetUid: hostUid,
+    submittedAt: Date.now(),
+  }));
+  await assertFails(get(ref(guest, `rooms/${room}/votes`)));
+  await assertSucceeds(get(ref(guest, `rooms/${room}/votes/${guestUid}`)));
+  await assertSucceeds(get(ref(host, `rooms/${room}/votes`)));
+  await assertFails(set(ref(guest, `rooms/${room}/scores/${guestUid}`), 1));
+
+  await assertSucceeds(update(ref(host, `rooms/${room}`), {
+    scores: { [hostUid]: 0, [guestUid]: 1 },
+    public: {
+      phase: 'results',
+      roundId: 1,
+      questionA: 'Question',
+      questionB: 'Alternate question',
+      alternateUid: hostUid,
+    },
+  }));
+  await assertSucceeds(get(ref(guest, `rooms/${room}/votes`)));
+  await assertSucceeds(get(ref(guest, `rooms/${room}/scores`)));
+});

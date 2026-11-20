@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addScores,
+  calculateRoundScores,
   createRoomCode,
   decodeDrawing,
   encodeDrawing,
@@ -38,6 +40,21 @@ test('shuffle preserves every item', () => {
 test('drawing serialization preserves pen color and eraser width', () => {
   const drawing = { strokes: [{ points: [{ x: 0.2, y: 0.3 }], color: '#2563eb', width: 10 }] };
   assert.deepEqual(decodeDrawing(encodeDrawing(drawing)), drawing);
+});
+
+test('voting awards correct guesses and rewards the alternate player for fooled players', () => {
+  const votes = {
+    alice: { roundId: 1, targetUid: 'impostor', submittedAt: 1 },
+    bob: { roundId: 1, targetUid: 'alice', submittedAt: 1 },
+    impostor: { roundId: 1, targetUid: 'bob', submittedAt: 1 },
+  };
+  const roundPoints = calculateRoundScores(votes, 'impostor', ['alice', 'bob', 'impostor']);
+  assert.deepEqual(roundPoints, { alice: 1, bob: 0, impostor: 1 });
+  assert.deepEqual(addScores({ alice: 2, bob: 3, impostor: 1 }, roundPoints), {
+    alice: 3,
+    bob: 3,
+    impostor: 2,
+  });
 });
 
 test('room codes avoid ambiguous characters', () => {

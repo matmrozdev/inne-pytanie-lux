@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { DrawingCanvas } from './DrawingCanvas';
 import {
+  addScores,
+  calculateRoundScores,
   chooseAlternateUid,
   chooseQuestion,
   clampInteger,
@@ -22,11 +24,14 @@ import {
   type GameSettings,
   type Player,
   type PublicRound,
+  type Scores,
   type StoredAnswer,
+  type Vote,
 } from './game';
 import {
   closeRoom,
   createRoom,
+  finishVoting,
   finishGame,
   joinRoom,
   listenAnswers,
@@ -35,12 +40,15 @@ import {
   listenMembers,
   listenMeta,
   listenPublicRound,
+  listenScores,
+  listenVotes,
   removePlayer,
   returnToLobby,
   revealAnswers,
-  revealSecondQuestion,
   startRound,
+  startVoting,
   submitAnswer,
+  submitVote,
   updateCategories,
   updateGameSettings,
   type HostPrivateState,
@@ -295,36 +303,61 @@ function PlayerList({ members, hostUid, currentUid, onRemove }: {
   </div>;
 }
 
-function Results({ round, members, answers, isHost, progressLabel, nextLabel, onSecond, onNext }: {
+function AnswerGallery({ members, answers }: {
+  members: Record<string, Player>;
+  answers: Record<string, StoredAnswer>;
+}) {
+  return <div className="answers">
+    {Object.values(members).map(player => <article key={player.uid}>
+      <h3>{player.name}</h3>
+      {answers[player.uid]?.drawing
+        ? <DrawingCanvas drawing={decodeDrawing(answers[player.uid].drawing)} />
+        : <p>Brak odpowiedzi</p>}
+    </article>)}
+  </div>;
+}
+
+function Results({ round, members, answers, votes, scores, isHost, progressLabel, nextLabel, onNext }: {
   round: PublicRound;
   members: Record<string, Player>;
   answers: Record<string, StoredAnswer>;
+  votes: Record<string, Vote>;
+  scores: Scores;
   isHost: boolean;
   progressLabel: string;
   nextLabel: string;
-  onSecond: () => void;
   onNext: () => void;
 }) {
+  const playerUids = Object.keys(members);
+  const roundPoints = calculateRoundScores(votes, round.alternateUid ?? '', playerUids);
+  const ranking = Object.values(members).sort((a, b) => (scores[b.uid] ?? 0) - (scores[a.uid] ?? 0));
   return <Shell><section className="screen">
-    <p className="tag">{progressLabel} · pytanie większości</p>
+    <p className="tag">{progressLabel} · wyniki głosowania</p>
     <h1>{round.questionA}</h1>
-    <div className="answers">
-      {Object.values(members).map(player => <article key={player.uid}>
-        <h3>{player.name}</h3>
-        {answers[player.uid]?.drawing
-          ? <DrawingCanvas drawing={decodeDrawing(answers[player.uid].drawing)} />
-          : <p>Brak odpowiedzi</p>}
-      </article>)}
-    </div>
-    {round.phase === 'second' && <div className="second">
+    <AnswerGallery members={members} answers={answers} />
+    <div className="second">
       <b>Drugie pytanie</b>
       <p>{round.questionB}</p>
-      <strong>Dostał je: {members[round.alternateUid ?? '']?.name ?? 'Nieznany gracz'}</strong>
-    </div>}
+      <strong>Osoba z innym pytaniem: {members[round.alternateUid ?? '']?.name ?? 'Nieznany gracz'}</strong>
+    </div>
+    <h2>Jak głosowaliście</h2>
+    <div className="vote-results">
+      {Object.values(members).map(player => <div key={player.uid}>
+        <span>{player.name} → {members[votes[player.uid]?.targetUid]?.name ?? 'brak głosu'}</span>
+        <strong>+{roundPoints[player.uid] ?? 0}</strong>
+      </div>)}
+    </div>
+    <h2>Klasyfikacja</h2>
+    <div className="scoreboard">
+      {ranking.map((player, index) => <div key={player.uid}>
+        <span><b>{index + 1}.</b> {player.name}</span>
+        <strong>{scores[player.uid] ?? 0} pkt</strong>
+      </div>)}
+    </div>
     {isHost && <div className="actions">
-      {round.phase === 'revealed' && <button onClick={onSecond}>Pokaż drugie pytanie</button>}
       <button className="primary" onClick={onNext}>{nextLabel}</button>
     </div>}
+    {!isHost && <p>Host przejdzie dalej.</p>}
   </section></Shell>;
 }
 
@@ -334,9 +367,13 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   const [round, setRound] = useState<PublicRound>({ phase: 'lobby', roundId: 0 });
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [answers, setAnswers] = useState<Record<string, StoredAnswer>>({});
+  const [votes, setVotes] = useState<Record<string, Vote>>({});
+  const [scores, setScores] = useState<Scores>({});
+  const [scoresLoaded, setScoresLoaded] = useState(false);
   const [hostPrivate, setHostPrivate] = useState<HostPrivateState | null>(null);
   const [drawing, setDrawing] = useState<Drawing>({ strokes: [] });
   const [error, setError] = useState('');
+  const finalizingRound = useRef<number | null>(null);
   const isHost = meta?.hostUid === uid;
   const settings: GameSettings = {
     rounds: meta?.rounds ?? DEFAULT_ROUNDS,
@@ -344,13 +381,22 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
     turnSeconds: meta?.turnSeconds ?? DEFAULT_TURN_SECONDS,
   };
   const progress = getQuestionProgress(round.roundId, settings.questionsPerRound);
-  const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'second';
+  const canSeeAllAnswers = isHost || round.phase === 'revealed' || round.phase === 'voting' || round.phase === 'results';
+  const canSeeAllVotes = isHost || round.phase === 'results';
+  const allPlayers = useMemo(() => Object.values(members), [members]);
+  const playerUids = useMemo(() => allPlayers.map(player => player.uid), [allPlayers]);
+  const currentPair = hostPrivate ? QUESTIONS.find(question => question.id === hostPrivate.pairId) : undefined;
 
   useEffect(() => listenMeta(code, setMeta), [code]);
   useEffect(() => listenMembers(code, setMembers), [code]);
   useEffect(() => listenPublicRound(code, setRound), [code]);
   useEffect(() => listenAssignment(code, uid, setAssignment), [code, uid]);
   useEffect(() => listenAnswers(code, uid, canSeeAllAnswers, setAnswers), [code, uid, canSeeAllAnswers]);
+  useEffect(() => listenVotes(code, uid, canSeeAllVotes, setVotes), [code, uid, canSeeAllVotes]);
+  useEffect(() => listenScores(code, nextScores => {
+    setScores(nextScores);
+    setScoresLoaded(true);
+  }), [code]);
   useEffect(() => isHost ? listenHostPrivate(code, setHostPrivate) : undefined, [code, isHost]);
   useEffect(() => {
     if (!meta || !isHost) return;
@@ -360,12 +406,26 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
   useEffect(() => {
     setDrawing(decodeDrawing(answers[uid]?.drawing));
   }, [answers, uid, round.roundId]);
+  useEffect(() => {
+    if (!isHost || !scoresLoaded || round.phase !== 'voting' || !currentPair || !hostPrivate || !playerUids.length) return;
+    const everyoneVoted = playerUids.every(playerUid => votes[playerUid]?.roundId === round.roundId);
+    if (!everyoneVoted || finalizingRound.current === round.roundId) return;
+    finalizingRound.current = round.roundId;
+    const roundPoints = calculateRoundScores(votes, hostPrivate.alternateUid, playerUids);
+    void finishVoting(
+      code,
+      round.roundId,
+      currentPair,
+      hostPrivate.alternateUid,
+      addScores(scores, roundPoints),
+    ).catch(() => {
+      finalizingRound.current = null;
+      setError('Nie udało się podliczyć głosów. Sprawdź internet.');
+    });
+  }, [code, currentPair, hostPrivate, isHost, playerUids, round.phase, round.roundId, scores, scoresLoaded, votes]);
 
   if (!meta) return <Shell><section className="screen"><h1>Łączenie z pokojem…</h1></section></Shell>;
 
-  const allPlayers = Object.values(members);
-  const connectedPlayers = allPlayers.filter(player => player.connected);
-  const currentPair = hostPrivate ? QUESTIONS.find(question => question.id === hostPrivate.pairId) : undefined;
   const beginRound = async () => {
     if (!isHost) return;
     if (allPlayers.length < MIN_PLAYERS) {
@@ -390,29 +450,75 @@ function Room({ code, uid, onExit }: { code: string; uid: string; onExit: () => 
       <p className="tag">Koniec gry</p>
       <h1>Rozegrano wszystkie pytania</h1>
       <p>{settings.rounds} rund · {settings.questionsPerRound} pytań w rundzie · {round.roundId} pytań łącznie</p>
+      <h2>Końcowa klasyfikacja</h2>
+      <div className="scoreboard">
+        {[...allPlayers].sort((a, b) => (scores[b.uid] ?? 0) - (scores[a.uid] ?? 0)).map((player, index) => <div key={player.uid}>
+          <span><b>{index + 1}.</b> {player.name}</span>
+          <strong>{scores[player.uid] ?? 0} pkt</strong>
+        </div>)}
+      </div>
       {isHost
         ? <button className="primary" onClick={() => void returnToLobby(code)}>Zagraj ponownie</button>
         : <p>Host może rozpocząć następną grę.</p>}
     </section></Shell>;
   }
 
-  if (round.phase === 'revealed' || round.phase === 'second') {
+  if (round.phase === 'results') {
     return <Results
       round={round}
       members={members}
       answers={answers}
+      votes={votes}
+      scores={scores}
       isHost={isHost}
       progressLabel={`Runda ${progress.roundNumber}/${settings.rounds} · Pytanie ${progress.questionNumber}/${settings.questionsPerRound}`}
       nextLabel={isGameComplete(round.roundId, settings)
         ? 'Zakończ grę'
         : progress.questionNumber === settings.questionsPerRound ? 'Następna runda' : 'Następne pytanie'}
-      onSecond={async () => {
-        if (currentPair && hostPrivate) await revealSecondQuestion(code, round.roundId, currentPair, hostPrivate.alternateUid);
-      }}
       onNext={() => isGameComplete(round.roundId, settings)
         ? void finishGame(code, round.roundId)
         : void beginRound()}
     />;
+  }
+
+  if (round.phase === 'revealed') {
+    return <Shell><section className="screen">
+      <p className="tag">Runda {progress.roundNumber}/{settings.rounds} · odpowiedzi</p>
+      <h1>{round.questionA}</h1>
+      <AnswerGallery members={members} answers={answers} />
+      {isHost
+        ? <button className="primary" onClick={() => void startVoting(code, round.roundId, round.questionA ?? '')}>Rozpocznij głosowanie</button>
+        : <p>Obejrzyj odpowiedzi. Host za chwilę rozpocznie głosowanie.</p>}
+    </section></Shell>;
+  }
+
+  if (round.phase === 'voting') {
+    const ownVote = votes[uid]?.roundId === round.roundId ? votes[uid] : undefined;
+    return <Shell><section className="screen">
+      <p className="tag">Runda {progress.roundNumber}/{settings.rounds} · głosowanie</p>
+      <h1>Kto miał inne pytanie?</h1>
+      <p>Porównaj rysunki i wskaż podejrzaną osobę.</p>
+      <AnswerGallery members={members} answers={answers} />
+      <div className="vote-options">
+        {allPlayers.filter(player => player.uid !== uid).map(player => <button
+          key={player.uid}
+          disabled={Boolean(ownVote)}
+          className={ownVote?.targetUid === player.uid ? 'selected' : ''}
+          onClick={() => void submitVote(code, uid, {
+            roundId: round.roundId,
+            targetUid: player.uid,
+            submittedAt: Date.now(),
+          }).catch(() => setError('Nie udało się zapisać głosu. Sprawdź internet.'))}
+        >{player.name}</button>)}
+      </div>
+      <ErrorMessage error={error} />
+      {ownVote
+        ? <p className="vote-wait">✓ Głos zapisany. Czekamy na pozostałych graczy.</p>
+        : <p>Głosu nie można zmienić po zatwierdzeniu.</p>}
+      {isHost && <div className="ready-list">{allPlayers.map(player => <span key={player.uid}>
+        {votes[player.uid]?.roundId === round.roundId ? '✓' : '○'} {player.name}
+      </span>)}</div>}
+    </section></Shell>;
   }
 
   if (round.phase === 'answering') {

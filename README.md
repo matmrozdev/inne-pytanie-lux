@@ -4,7 +4,7 @@ An online-first Polish party game PWA for iPhone, Android, and desktop. Players 
 
 The original peer-to-peer application remains available in the separate `inne-pytanie-pwa` repository. This repository does not use WebRTC signaling.
 
-The host can configure one to twenty rounds, one to ten question pairs per round, and a 30, 60, 120, or 160-second question timer. The drawing board provides six pen colors, an eraser, undo, and clear while always retaining a light canvas. The local database currently contains 181 paired questions across 19 categories, including Polish internet, memes, movies, places, technology, and everyday topics. Used pairs are avoided until the selected category pool is exhausted.
+The host can configure one to twenty rounds, one to ten question pairs per round, and a 30, 60, 120, or 160-second question timer. The drawing board provides six pen colors, an eraser, undo, and clear while always retaining a light canvas. After the drawings are shown, every player privately votes for the person who received the alternate question. Correct voters earn one point, while that player earns one point for every other player they fooled. Voting results and the cumulative scoreboard appear only after everybody has voted, and the host controls when the game continues. The local database currently contains 181 paired questions across 19 categories, including Polish internet, memes, movies, places, technology, and everyday topics. Used pairs are avoided until the selected category pool is exhausted.
 
 ## Architecture
 
@@ -45,9 +45,10 @@ npm run test:rules
 ## Security model
 
 - A room expires six hours after creation.
-- Only the host can change categories, start rounds, reveal answers, or close the room.
+- Only the host can change categories, start rounds, reveal answers, finalize scoring, continue the game, or close the room.
 - Each player can write only their own presence and answer.
 - A player can read only their own private assignment.
 - Answers are visible to the host while drawing and to all room members only after reveal.
+- Votes are visible only to their author and the host until everybody has voted; cumulative scores are public to room members.
 - Drawing payloads and player names have server-enforced size limits.
 - The app stores no email address, password, or profile account.
