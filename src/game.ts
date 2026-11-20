@@ -125,6 +125,12 @@ export function normalizeRoomCode(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LENGTH);
 }
 
+export function secureRandomIndex(length: number, randomValue?: number): number {
+  if (!Number.isInteger(length) || length < 1) throw new Error('Nie można losować z pustej listy.');
+  const value = randomValue ?? crypto.getRandomValues(new Uint32Array(1))[0];
+  return Math.floor((value / 0x1_0000_0000) * length);
+}
+
 export function chooseQuestion(
   questions: QuestionPair[],
   categories: Category[],
@@ -134,7 +140,7 @@ export function chooseQuestion(
   if (!pool.length) throw new Error('Wybierz przynajmniej jedną kategorię.');
   const available = pool.filter(question => !usedIds.includes(question.id));
   const candidates = available.length ? available : pool;
-  const question = candidates[Math.floor(Math.random() * candidates.length)];
+  const question = candidates[secureRandomIndex(candidates.length)];
   const nextUsed = available.length ? [...usedIds, question.id] : [question.id];
   return { question, usedIds: nextUsed };
 }
@@ -144,7 +150,7 @@ export function chooseAlternateUid(playerUids: string[], previousUid?: string): 
   const candidates = playerUids.length > 1 && previousUid
     ? playerUids.filter(uid => uid !== previousUid)
     : playerUids;
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  return candidates[secureRandomIndex(candidates.length)];
 }
 
 export function encodeDrawing(drawing: Drawing): string {

@@ -10,6 +10,7 @@ import {
   isGameComplete,
   normalizeRoomCode,
   sanitizeName,
+  secureRandomIndex,
 } from '../src/game.ts';
 import { CATEGORIES, QUESTIONS, shuffle } from '../src/questions.ts';
 
@@ -64,4 +65,10 @@ test('room codes avoid ambiguous characters', () => {
 test('room codes and player names are normalized', () => {
   assert.equal(normalizeRoomCode(' ab-cd 23! '), 'ABCD23');
   assert.equal(sanitizeName('  Jan   Kowalski  '), 'Jan Kowalski');
+});
+
+test('secure random indexes cover the whole candidate range without depending on list order', () => {
+  assert.equal(secureRandomIndex(10, 0), 0);
+  assert.equal(secureRandomIndex(10, 0xffff_ffff), 9);
+  assert.throws(() => secureRandomIndex(0, 0));
 });
