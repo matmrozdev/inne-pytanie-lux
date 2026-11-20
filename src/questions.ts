@@ -13,7 +13,7 @@ const pairs:Array<[Category,string,string]>=[
 ['Zwierzęta','Jakim zwierzęciem chciałbyś być?','Jakie zwierzę najbardziej cię wkurza?'],['Zwierzęta','Jakie zwierzę jest najsłodsze?','Jakie zwierzę jest najstraszniejsze?'],['Zwierzęta','Jakie zwierzę chciałbyś mieć?','Jakiego zwierzęcia nie wpuściłbyś do domu?'],['Zwierzęta','Które zwierzę najlepiej pływa?','Które zwierzę najlepiej biega?'],['Zwierzęta','Jakie zwierzę kojarzy ci się z tobą?','Jakie zwierzę kojarzy ci się z twoim sąsiadem?'],
 ['Codzienne','O której zwykle wstajesz?','O której zwykle zasypiasz?'],['Codzienne','Co robisz zaraz po obudzeniu?','Co robisz tuż przed snem?'],['Codzienne','Ile czasu zajmuje ci wyjście z domu?','Ile czasu zajmuje ci powrót do formy po imprezie?'],['Codzienne','Co najczęściej nosisz w kieszeni?','Co najczęściej zostawiasz w domu?'],['Codzienne','Gdzie odpoczywasz najlepiej?','Gdzie najłatwiej ci zasnąć?'],
 ['Internet','Jakiej aplikacji używasz najczęściej?','Którą aplikację najchętniej byś usunął?'],['Internet','Kogo najchętniej oglądasz w internecie?','Z kim chciałbyś nagrać film?'],['Internet','Jaki mem zawsze cię śmieszy?','Jaki mem znudził ci się najbardziej?'],['Internet','Ile czasu spędzasz dziennie online?','Ile czasu wytrzymasz bez internetu?'],['Internet','Co najczęściej wyszukujesz?','Czego nigdy nie wpisałbyś publicznie?'],
-['Losowe','Co zabrałbyś na bezludną wyspę?','Co zabrałbyś na koniec świata?'],['Losowe','Jaki superpower chciałbyś mieć?','Jaki superpower byłby najbardziej bezużyteczny?'],['Losowe','Gdzie chciałbyś mieszkać?','Gdzie chciałbyś pojechać tylko raz?'],['Losowe','Co kupiłbyś za milion złotych?','Co kupiłbyś za ostatnie sto złotych?'],['Losowe','Kim chciałeś zostać jako dziecko?','Kim chciałbyś być przez jeden dzień?']];
+['Losowe','Jaki przedmiot powiększyłbyś do rozmiaru domu?','Jaki przedmiot zmniejszyłbyś do rozmiaru monety?'],['Losowe','Jaki superpower chciałbyś mieć?','Jaki superpower byłby najbardziej bezużyteczny?'],['Losowe','Gdzie chciałbyś mieszkać?','Gdzie chciałbyś pojechać tylko raz?'],['Losowe','Co kupiłbyś za milion złotych?','Co kupiłbyś za ostatnie sto złotych?'],['Losowe','Kim chciałeś zostać jako dziecko?','Kim chciałbyś być przez jeden dzień?']];
 
 const additionalPairs:Array<[Category,string,string]>=[
 ['Gry','Którą grę chciałbyś przejść jeszcze raz?','Którą grę najchętniej zobaczyłbyś jako film?'],
@@ -82,7 +82,7 @@ const additionalPairs:Array<[Category,string,string]>=[
 ['Memy','Jaki mem najlepiej nadaje się na koszulkę?','Jaki mem najlepiej nadaje się na naklejkę?'],
 
 ['Przedmioty','Jaki przedmiot zawsze nosisz przy sobie?','Jaki przedmiot najczęściej gubisz?'],
-['Przedmioty','Co zabrałbyś do schronu?','Co zabrałbyś pod namiot?'],
+['Przedmioty','Jaki przedmiot zamieniłbyś w robota?','Jaki przedmiot zamieniłbyś w pojazd?'],
 ['Przedmioty','Jaki przedmiot z domu jest najbardziej przydatny?','Jaki przedmiot z domu zajmuje najwięcej miejsca?'],
 ['Przedmioty','Co najtrudniej pożyczyć komuś obcemu?','Co najłatwiej oddałbyś za darmo?'],
 ['Przedmioty','Jaki przedmiot powinien mieć każdy student?','Jaki przedmiot powinien mieć każdy kierowca?'],
@@ -143,6 +143,36 @@ const additionalPairs:Array<[Category,string,string]>=[
 ['Czynności','Co robisz najczęściej, gdy nikt nie patrzy?','Co robisz tylko wtedy, gdy wszyscy patrzą?'],
 ['Czynności','Która domowa czynność zajmuje za dużo czasu?','Którą domową czynność najłatwiej odkładać?'],
 ['Czynności','Co łatwiej pokazać bez słów?','Co najtrudniej wytłumaczyć bez słów?'],
+
+['Losowe','Co powinno spadać z nieba zamiast deszczu?','Co byłoby najgorsze, gdyby zaczęło spadać z nieba?'],
+['Losowe','Jaki pojazd wybrałbyś do ucieczki przed zombie?','Jaki pojazd wybrałbyś do ucieczki przed dinozaurem?'],
+['Losowe','Co postawiłbyś na środku pustego miasta?','Co chciałbyś znaleźć na środku ciemnego lasu?'],
+['Losowe','Jaki przedmiot powinien mieć przycisk cofania czasu?','Jaki przedmiot powinien mieć przycisk teleportacji?'],
+['Losowe','Co chciałbyś zobaczyć przez okno statku kosmicznego?','Co chciałbyś zobaczyć przez okno łodzi podwodnej?'],
+['Losowe','Jaki przedmiot byłby najlepszym kapeluszem dla olbrzyma?','Jaki przedmiot byłby najlepszym domem dla myszy?'],
+['Losowe','Co umieściłbyś na fladze własnego kraju?','Co umieściłbyś na herbie własnej drużyny?'],
+['Losowe','Jak wyglądałaby maskotka twojego życia?','Jak wyglądałaby maskotka poniedziałku?'],
+
+['Przedmioty','Który przedmiot chciałbyś usłyszeć, gdyby potrafił mówić?','Który przedmiot wiedziałby o tobie zdecydowanie za dużo?'],
+['Przedmioty','Jaki współczesny przedmiot zachwyciłby średniowiecznego króla?','Jaki współczesny przedmiot najbardziej zdziwiłby pirata?'],
+['Przedmioty','Jaki przedmiot wyglądałby najlepiej ze skrzydłami?','Jaki przedmiot wyglądałby najlepiej na czterech nogach?'],
+['Przedmioty','Co z twojej kieszeni mogłoby trafić do muzeum?','Co z twojej kieszeni mogłoby trafić prosto do kosza?'],
+
+['Miejsca','Gdzie powinny prowadzić tajne drzwi w twoim domu?','Gdzie powinien prowadzić tajny tunel pod twoim domem?'],
+['Miejsca','Jak wyglądałoby miasto zbudowane na chmurach?','Jak wyglądałoby miasto zbudowane pod wodą?'],
+['Miejsca','W jakim miejscu najbardziej przydałaby się gigantyczna zjeżdżalnia?','W jakim miejscu najbardziej przydałaby się trampolina?'],
+
+['Jedzenie','Jakie jedzenie mogłoby być osobną planetą?','Jakie jedzenie mogłoby być księżycem?'],
+['Jedzenie','Co podałbyś na uczcie w zamku z lodu?','Co podałbyś na uczcie wewnątrz wulkanu?'],
+['Jedzenie','Które jedzenie chciałbyś zobaczyć w wersji gigantycznej?','Które jedzenie najlepiej wyglądałoby w wersji miniaturowej?'],
+
+['Zwierzęta','Które zwierzę byłoby najlepszym detektywem?','Które zwierzę byłoby najlepszym ochroniarzem?'],
+['Zwierzęta','Które zwierzę najlepiej poprowadziłoby wiadomości?','Które zwierzę najlepiej zapowiadałoby pogodę?'],
+['Zwierzęta','Któremu zwierzęciu dodałbyś skrzydła?','Któremu zwierzęciu dałbyś ludzki głos?'],
+
+['Codzienne','Który przedmiot powinien wykonywać za ciebie domowe obowiązki?','Który przedmiot najgłośniej narzekałby na domowe obowiązki?'],
+['Codzienne','Gdzie w domu ukryłbyś sekretne przejście?','Gdzie w domu zamontowałbyś zjeżdżalnię?'],
+['Codzienne','Jaki dźwięk ustawiłbyś jako budzik?','Jaki dźwięk ustawiłbyś jako dzwonek do drzwi?'],
 ];
 
 export const QUESTIONS:QuestionPair[]=[...pairs,...additionalPairs].map(([category,questionA,questionB],index)=>({id:index+1,category,questionA,questionB}));

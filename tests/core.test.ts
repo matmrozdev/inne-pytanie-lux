@@ -14,11 +14,12 @@ import {
 } from '../src/game.ts';
 import { CATEGORIES, QUESTIONS, shuffle } from '../src/questions.ts';
 
-test('database includes 30 CS2 pairs and many general pairs', () => {
+test('database includes 30 CS2 pairs and a broad creative question pool', () => {
   assert.equal(QUESTIONS.filter(question => question.category === 'CS2').length, 30);
-  assert.ok(QUESTIONS.length >= 180);
+  assert.ok(QUESTIONS.length >= 200);
   assert.ok(CATEGORIES.includes('Polski internet'));
   assert.ok(CATEGORIES.includes('Memy'));
+  assert.ok(QUESTIONS.every(question => !`${question.questionA} ${question.questionB}`.toLowerCase().includes('bezludną wyspę')));
 });
 
 test('question IDs are unique and pairs differ', () => {
