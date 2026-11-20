@@ -6,7 +6,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { get, ref, set } from 'firebase/database';
+import { get, ref, set, update } from 'firebase/database';
 
 const projectId = 'demo-inne-pytanie-lux';
 const room = 'ABCDEFGH';
@@ -91,6 +91,22 @@ test('only the host can change the public round state', async () => {
   const guest = environment.authenticatedContext(guestUid).database();
   await assertFails(set(ref(guest, `rooms/${room}/public`), { phase: 'revealed', roundId: 1, questionA: 'Question' }));
   await assertSucceeds(set(ref(host, `rooms/${room}/public`), { phase: 'revealed', roundId: 1, questionA: 'Question' }));
+});
+
+test('the host can atomically start a round while a guest cannot', async () => {
+  const nextRound = {
+    assignments: {
+      [hostUid]: { roundId: 2, question: 'Shared question' },
+      [guestUid]: { roundId: 2, question: 'Alternate question' },
+    },
+    answers: null,
+    public: { phase: 'answering', roundId: 2 },
+    hostPrivate: { pairId: 2, alternateUid: guestUid, usedIds: [1, 2] },
+  };
+  const host = environment.authenticatedContext(hostUid).database();
+  const guest = environment.authenticatedContext(guestUid).database();
+  await assertFails(update(ref(guest, `rooms/${room}`), nextRound));
+  await assertSucceeds(update(ref(host, `rooms/${room}`), nextRound));
 });
 
 test('answers are private until the host reveals them', async () => {

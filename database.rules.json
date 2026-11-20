@@ -24,6 +24,7 @@
           ".validate": "newData.hasChildren(['phase', 'roundId']) && newData.child('phase').isString() && (newData.child('phase').val() === 'lobby' || newData.child('phase').val() === 'answering' || newData.child('phase').val() === 'revealed' || newData.child('phase').val() === 'second') && newData.child('roundId').isNumber()"
         },
         "assignments": {
+          ".write": "auth != null && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
           "$uid": {
             ".read": "auth != null && ($uid === auth.uid || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid)",
             ".write": "auth != null && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
@@ -32,6 +33,7 @@
         },
         "answers": {
           ".read": "auth != null && root.child('rooms').child($room).child('members').child(auth.uid).exists() && (root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid || root.child('rooms').child($room).child('public/phase').val() === 'revealed' || root.child('rooms').child($room).child('public/phase').val() === 'second')",
+          ".write": "auth != null && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid && !newData.exists()",
           "$uid": {
             ".read": "auth != null && ($uid === auth.uid || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid || root.child('rooms').child($room).child('public/phase').val() === 'revealed' || root.child('rooms').child($room).child('public/phase').val() === 'second')",
             ".write": "auth != null && (($uid === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('rooms').child($room).child('public/phase').val() === 'answering' && newData.child('roundId').val() === root.child('rooms').child($room).child('public/roundId').val()) || (root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid && !newData.exists()))",
